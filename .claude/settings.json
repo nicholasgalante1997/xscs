@@ -1,0 +1,71 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent claude --event SessionStart",
+            "timeout": 20,
+            "statusMessage": "Recalling stored context"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent claude --event UserPromptSubmit",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent claude --event Stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent claude --event PreCompact",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent claude --event SessionEnd",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "xscs": {
+      "command": "/Users/nickgalante/.bun/bin/bun",
+      "args": [
+        "/Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js",
+        "mcp"
+      ]
+    }
+  }
+}

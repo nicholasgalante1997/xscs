@@ -1,0 +1,10 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "./dist",
+        "jsx": "react-jsx",
+        "types": ["bun", "node"]
+    },
+    "include": ["src/**/*", "index.ts"],
+    "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.test.tsx"]
+}

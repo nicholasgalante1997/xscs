@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.DS_Store
+
+# local store artifacts (never commit an agent memory db)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.xscs/store.db*
+.xscs/*.log
