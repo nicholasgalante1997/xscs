@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { ensureWorkspace, findWorkspaceByRootOrName, openStore } from '@xscs/core';
+import { ensureWorkspace, findWorkspaceByRootOrName, openStore, serverPlatform } from '@xscs/core';
 
 import { applyAction, loadState, resolveConflict, search } from './api';
 import { renderShell } from './shell';
@@ -14,6 +16,8 @@ export interface ServeOptions {
     /** Working directory used to pick the default workspace. */
     cwd?: string;
     branch?: string | null;
+    /** Development-only source bundler supplied by the Bun composition root. */
+    buildClient?: (entry: string) => Promise<string>;
 }
 
 /**
@@ -26,12 +30,12 @@ export async function serveDashboard(opts: ServeOptions = {}): Promise<{ url: st
     const cwd = opts.cwd ?? process.cwd();
     const here = ensureWorkspace(db, cwd);
     const branch = opts.branch ?? null;
-    const clientJs = await resolveClientBundle();
+    const clientJs = await resolveClientBundle(opts.buildClient);
 
-    const server = Bun.serve({
+    const runtime = serverPlatform();
+    const server = await runtime.serve({
         port: opts.port ?? 4319,
         hostname: opts.hostname ?? '127.0.0.1',
-        development: false,
         async fetch(req) {
             const url = new URL(req.url);
 
@@ -79,9 +83,9 @@ export async function serveDashboard(opts: ServeOptions = {}): Promise<{ url: st
 
     const urlString = `http://${server.hostname}:${server.port}`;
     console.log(`xscs dashboard → ${urlString}`);
-    if (opts.open !== false) openBrowser(urlString);
+    if (opts.open !== false) runtime.openBrowser(urlString);
 
-    return { url: urlString, stop: () => server.stop(true) };
+    return { url: urlString, stop: () => server.stop() };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -96,30 +100,13 @@ function json(body: unknown, status = 200): Response {
  * (dev, or `bun run src/dev.ts`) there is no bundle yet, so build one in memory —
  * which also means the dev loop needs no watcher.
  */
-async function resolveClientBundle(): Promise<string> {
-    const prebuilt = join(import.meta.dir, 'client', 'app.js');
-    if (existsSync(prebuilt)) return Bun.file(prebuilt).text();
+async function resolveClientBundle(buildClient?: (entry: string) => Promise<string>): Promise<string> {
+    const moduleDirectory = fileURLToPath(new URL('.', import.meta.url));
+    const prebuilt = join(moduleDirectory, 'client', 'app.js');
+    if (existsSync(prebuilt)) return readFile(prebuilt, 'utf8');
 
-    const entry = join(import.meta.dir, 'client', 'main.tsx');
+    const entry = join(moduleDirectory, 'client', 'main.tsx');
     if (!existsSync(entry)) throw new Error(`dashboard client not found (looked for ${prebuilt} and ${entry})`);
-
-    const result = await Bun.build({
-        entrypoints: [entry],
-        target: 'browser',
-        format: 'esm',
-        minify: false,
-        define: { 'process.env.NODE_ENV': '"development"' },
-    });
-    if (!result.success) throw new AggregateError(result.logs, 'dashboard client build failed');
-    return result.outputs[0]!.text();
-}
-
-function openBrowser(url: string): void {
-    const cmd =
-        process.platform === 'darwin' ? ['open', url] : process.platform === 'win32' ? ['cmd', '/c', 'start', url] : ['xdg-open', url];
-    try {
-        Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' }).unref();
-    } catch {
-        /* opening a browser is a convenience, never a requirement */
-    }
+    if (!buildClient) throw new Error(`dashboard source build requires a runtime buildClient capability (${entry})`);
+    return buildClient(entry);
 }
