@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -20,6 +20,7 @@ import {
     listItems,
     listWorkspaces,
     openStore,
+    processPlatform,
     pruneBriefs,
     pruneEvents,
     putItem,
@@ -65,7 +66,7 @@ function out(ctx: Ctx, human: string, data: unknown): void {
  * unbuilt source tree would fail silently at exactly the moment it matters.
  */
 export function resolveEntry(): string {
-    const main = resolve(Bun.main);
+    const main = resolve(processPlatform().mainEntry);
     if (main.endsWith('.js')) return main;
     const built = resolve(main, '..', 'dist', 'xscs.js');
     if (existsSync(built)) return built;
@@ -388,12 +389,14 @@ export function cmdDoctor(args: CommandInput): void {
         ['codex user hooks', `${homedir()}/.codex/hooks.json`],
     ] as const) {
         const present = existsSync(path);
-        const wired = present && Bun.file(path).size > 0 ? hasXscsHook(path) : false;
+        const wired = present && statSync(path).size > 0 ? hasXscsHook(path) : false;
         checks.push({ name: harness, ok: wired, detail: present ? (wired ? `wired: ${path}` : `present but not wired: ${path}`) : 'absent' });
     }
 
-    checks.push({ name: 'claude cli', ok: Bun.which('claude') !== null, detail: Bun.which('claude') ?? 'not on PATH' });
-    checks.push({ name: 'codex cli', ok: Bun.which('codex') !== null, detail: Bun.which('codex') ?? 'not on PATH' });
+    const claude = processPlatform().which('claude');
+    const codex = processPlatform().which('codex');
+    checks.push({ name: 'claude cli', ok: claude !== null, detail: claude ?? 'not on PATH' });
+    checks.push({ name: 'codex cli', ok: codex !== null, detail: codex ?? 'not on PATH' });
 
     const s = stats(ctx.db, ctx.workspace.id);
     checks.push({

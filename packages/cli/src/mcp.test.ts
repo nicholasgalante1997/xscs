@@ -53,7 +53,7 @@ describe('MCP JSON-RPC conformance characterization', () => {
                 result: {
                     protocolVersion: '2025-06-18',
                     capabilities: { tools: {} },
-                    serverInfo: { name: 'xscs', version: '0.1.0' },
+                    serverInfo: { name: 'xscs', version: '0.2.0-alpha.0' },
                 },
             },
         ]);

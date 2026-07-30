@@ -8,6 +8,7 @@ import {
     type ItemDraft,
     listItems,
     openStore,
+    processPlatform,
     putItem,
     searchItems,
     setItemPinned,
@@ -18,6 +19,7 @@ import {
 
 import { currentBranch } from './git';
 import { logError } from './hook';
+import { VERSION } from './version';
 
 /**
  * Hooks give the store *ambient* recall: context arrives whether the agent asked
@@ -255,12 +257,9 @@ export async function runMcpServer(): Promise<void> {
     // MCP's stdio transport is newline-delimited JSON-RPC, so messages are framed
     // by scanning for '\n' rather than by any length header.
     const decoder = new TextDecoder();
-    const reader = Bun.stdin.stream().getReader();
     let buffer = '';
 
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    for await (const value of processPlatform().stdinChunks()) {
         buffer += decoder.decode(value, { stream: true });
         let index = buffer.indexOf('\n');
         while (index !== -1) {
@@ -290,7 +289,7 @@ function handleLine(line: string, ctx: Ctx): void {
                     respond(req.id!, {
                         protocolVersion: PROTOCOL_VERSION,
                         capabilities: { tools: {} },
-                        serverInfo: { name: 'xscs', version: '0.1.0' },
+                        serverInfo: { name: 'xscs', version: VERSION },
                     });
                 return;
             case 'tools/list':

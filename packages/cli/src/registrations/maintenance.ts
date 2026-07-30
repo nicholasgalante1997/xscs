@@ -1,0 +1,38 @@
+import type cac from 'cac';
+
+import { cmdConflicts, cmdDistill, cmdPrune } from '../commands';
+import { type CliOptions, commandInput, numberOption } from './input';
+
+export function registerMaintenanceCommands(cli: ReturnType<typeof cac>): void {
+    cli.command('distill', 'Distill captured sessions into durable context')
+        .option('--session <id>', 'Distill one session')
+        .option('--pending', 'Distill pending sessions')
+        .option('--mode <mode>', 'heuristic, agent, or both')
+        .option('--backend <backend>', 'claude, codex, or none')
+        .option('--limit <count>', 'Maximum sessions')
+        .option('--dry-run', 'Return drafts without writing')
+        .option('--handoff', 'Regenerate the workspace handoff')
+        .option('--quiet', 'Suppress human output')
+        .action(async (options: CliOptions) => cmdDistill(commandInput('distill', [], options)));
+
+    cli.command('conflicts', 'List contradictory or duplicate memories')
+        .option('--dismiss <id>', 'Dismiss a pair; pass twice')
+        .option('--limit <count>', 'Maximum pairs')
+        .action((options: CliOptions) => cmdConflicts(commandInput('conflicts', [], options)));
+
+    cli.command('prune', 'Run decay and prune consumed history')
+        .option('--events-days <days>', 'Consumed event retention')
+        .option('--briefs-days <days>', 'Brief retention')
+        .action((options: CliOptions) => cmdPrune(commandInput('prune', [], options)));
+
+    cli.command('serve', 'Open the curation dashboard')
+        .option('--port <port>', 'Loopback port', { default: 4319 })
+        .option('--no-open', 'Do not open a browser')
+        .action(async (options: CliOptions) => {
+            const { serveDashboard } = await import('@xscs/dashboard');
+            await serveDashboard({
+                port: numberOption(options.port) ?? 4319,
+                open: options.open !== false,
+            });
+        });
+}

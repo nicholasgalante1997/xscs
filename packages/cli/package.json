@@ -1,16 +1,32 @@
 {
-  "name": "@xscs/cli",
-  "version": "0.1.0",
+  "name": "cross-session-summary",
+  "version": "0.2.0-alpha.0",
   "description": "xscs — cross-session context store for Claude Code and Codex",
-  "private": true,
   "type": "module",
   "bin": {
-    "xscs": "./dist/xscs.js"
+    "xscs": "./dist/xscs.node.js",
+    "xscs-bun": "./dist/xscs.js"
   },
   "files": [
-    "dist"
+    "dist/xscs.js",
+    "dist/xscs.node.js",
+    "dist/client/app.js",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "alpha"
+  },
+  "engines": {
+    "bun": ">=1.3",
+    "node": ">=24"
+  },
   "scripts": {
+    "prebuild": "rm -rf dist",
     "build": "run-s bundle types",
     "bundle": "bun run build.ts",
     "types": "tsc -p tsconfig.json",
@@ -19,11 +35,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@xscs/core": "workspace:*",
-    "@xscs/dashboard": "workspace:*",
     "cac": "^7.0.0"
   },
   "devDependencies": {
+    "@xscs/core": "workspace:*",
+    "@xscs/dashboard": "workspace:*",
     "@xscs/internal-build-utils": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "latest",

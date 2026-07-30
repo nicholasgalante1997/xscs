@@ -14,6 +14,7 @@ import {
     HookInput,
     logPath,
     openStore,
+    processPlatform,
     recordBrief,
     renderHandoff,
     searchItems,
@@ -25,6 +26,7 @@ import {
 } from '@xscs/core';
 
 import { currentBranch } from './git';
+import { harnessFor, recognizeHarness } from './harness';
 
 /**
  * Hook output contract. Claude Code and Codex agree on this shape: a JSON object
@@ -65,20 +67,32 @@ export async function runHook(args: HookArgs): Promise<void> {
 
     let raw = '';
     try {
-        raw = await Bun.stdin.text();
+        raw = await processPlatform().readStdin();
     } catch {
         raw = '';
     }
 
     let input: HookInput;
     try {
-        const parsed = HookInput.safeParse(JSON.parse(raw || '{}'));
-        if (!parsed.success) {
-            logError('hook input did not match contract', parsed.error.message);
-            process.stdout.write('{}');
-            return;
+        const decoded: unknown = JSON.parse(raw || '{}');
+        const adapter = args.agent ? harnessFor(args.agent) : null;
+        if (adapter) {
+            const normalized = adapter.normalizeHookPayload(decoded);
+            if (!normalized) {
+                logError('hook input did not match contract');
+                process.stdout.write('{}');
+                return;
+            }
+            input = normalized;
+        } else {
+            const parsed = HookInput.safeParse(decoded);
+            if (!parsed.success) {
+                logError('hook input did not match contract', parsed.error.message);
+                process.stdout.write('{}');
+                return;
+            }
+            input = parsed.data;
         }
-        input = parsed.data;
     } catch (e) {
         logError('hook input was not JSON', e);
         process.stdout.write('{}');
@@ -379,12 +393,7 @@ function alreadyInjected(db: DB, session_id: string): { ids: Set<string>; topups
 
 export function resolveAgent(input: HookInput, explicit?: AgentKind): AgentKind {
     if (explicit) return explicit;
-    const transcript = input.transcript_path ?? '';
-    if (transcript.includes('/.codex/') || transcript.includes('rollout-')) return 'codex';
-    if (transcript.includes('/.claude/')) return 'claude';
-    if (process.env.CLAUDE_PROJECT_DIR) return 'claude';
-    if (process.env.CODEX_HOME) return 'codex';
-    return 'other';
+    return recognizeHarness(input)?.kind ?? 'other';
 }
 
 function modelName(model: HookInput['model']): string | null {
@@ -421,14 +430,11 @@ function truncateUnknown(value: unknown, max: number): string {
  */
 export function spawnBackground(argv: string[]): void {
     try {
-        const self = Bun.main;
-        const proc = Bun.spawn([process.execPath, self, ...argv], {
-            stdin: 'ignore',
-            stdout: 'ignore',
-            stderr: 'ignore',
+        const processes = processPlatform();
+        processes.spawnDetached({
+            command: [process.execPath, processes.mainEntry, ...argv],
             env: { ...process.env, XSCS_BACKGROUND: '1' },
         });
-        proc.unref();
     } catch (e) {
         logError('background spawn failed', e);
     }
