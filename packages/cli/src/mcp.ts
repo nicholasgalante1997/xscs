@@ -272,15 +272,22 @@ export async function runMcpServer(): Promise<void> {
 }
 
 function handleLine(line: string, ctx: Ctx): void {
-    let req: JsonRpcRequest;
+    let decoded: unknown;
     try {
-        req = JSON.parse(line) as JsonRpcRequest;
+        decoded = JSON.parse(line);
     } catch {
+        respondError(null, -32700, 'Parse error');
         return;
     }
 
-    // Notifications carry no id and must not be answered.
-    const isNotification = req.id === undefined || req.id === null;
+    if (!isRequest(decoded)) {
+        respondError(requestId(decoded), -32600, 'Invalid Request');
+        return;
+    }
+    const req = decoded;
+    // Notifications omit id entirely. An explicit null id is still answered so
+    // clients can correlate the response, though JSON-RPC discourages null ids.
+    const isNotification = !Object.hasOwn(req, 'id');
 
     try {
         switch (req.method) {
@@ -306,7 +313,16 @@ function handleLine(line: string, ctx: Ctx): void {
                     respond(req.id!, { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true });
                     return;
                 }
-                const args = (req.params?.arguments ?? {}) as Record<string, unknown>;
+                const args = req.params?.arguments ?? {};
+                if (!isRecord(args)) {
+                    respondError(req.id!, -32602, 'Invalid params: arguments must be an object');
+                    return;
+                }
+                const validationError = validateToolArguments(tool.inputSchema, args);
+                if (validationError) {
+                    respondError(req.id!, -32602, `Invalid params: ${validationError}`);
+                    return;
+                }
                 const text = tool.handler(args, ctx);
                 respond(req.id!, { content: [{ type: 'text', text }] });
                 return;
@@ -324,12 +340,47 @@ function handleLine(line: string, ctx: Ctx): void {
     }
 }
 
-function respond(id: string | number, result: unknown): void {
+function respond(id: string | number | null, result: unknown): void {
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
 }
 
-function respondError(id: string | number, code: number, message: string): void {
+function respondError(id: string | number | null, code: number, message: string): void {
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n');
+}
+
+function isRequest(value: unknown): value is JsonRpcRequest {
+    if (!isRecord(value) || value.jsonrpc !== '2.0' || typeof value.method !== 'string') return false;
+    if (Object.hasOwn(value, 'id') && value.id !== null && typeof value.id !== 'string' && typeof value.id !== 'number') {
+        return false;
+    }
+    return value.params === undefined || isRecord(value.params);
+}
+
+function requestId(value: unknown): string | number | null {
+    if (!isRecord(value)) return null;
+    return typeof value.id === 'string' || typeof value.id === 'number' ? value.id : null;
+}
+
+function validateToolArguments(schema: Record<string, unknown>, args: Record<string, unknown>): string | null {
+    const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === 'string') : [];
+    for (const name of required) if (!Object.hasOwn(args, name)) return `missing required property "${name}"`;
+
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    for (const [name, value] of Object.entries(args)) {
+        const property = properties[name];
+        if (!isRecord(property)) continue;
+        const type = property.type;
+        if (type === 'string' && typeof value !== 'string') return `"${name}" must be a string`;
+        if (type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) return `"${name}" must be a number`;
+        if (type === 'boolean' && typeof value !== 'boolean') return `"${name}" must be a boolean`;
+        if (type === 'array' && !Array.isArray(value)) return `"${name}" must be an array`;
+        if (Array.isArray(property.enum) && !property.enum.includes(value)) return `"${name}" is not an allowed value`;
+    }
+    return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function str(v: unknown): string | null {

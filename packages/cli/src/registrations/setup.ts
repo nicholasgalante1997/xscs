@@ -1,6 +1,6 @@
 import type cac from 'cac';
 
-import { cmdDoctor, cmdInit } from '../commands';
+import { cmdDoctor, cmdInit } from '../workflows/setup';
 import { type CliOptions,commandInput } from './input';
 
 export function registerSetupCommands(cli: ReturnType<typeof cac>): void {

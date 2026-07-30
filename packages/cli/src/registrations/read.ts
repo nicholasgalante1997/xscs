@@ -1,6 +1,7 @@
 import type cac from 'cac';
 
-import { cmdBrief, cmdExport, cmdHandoff, cmdList, cmdSearch, cmdStats, cmdWorkspaces } from '../commands';
+import { cmdBrief, cmdExport, cmdHandoff, cmdList, cmdSearch } from '../workflows/read';
+import { cmdStats, cmdWorkspaces } from '../workflows/setup';
 import { type CliOptions,commandInput } from './input';
 
 export function registerReadCommands(cli: ReturnType<typeof cac>): void {

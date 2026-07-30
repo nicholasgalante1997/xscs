@@ -1,6 +1,6 @@
 import type cac from 'cac';
 
-import { cmdForget, cmdPin, cmdPromote, cmdRemember, cmdReview } from '../commands';
+import { cmdForget, cmdPin, cmdPromote, cmdRemember, cmdReview } from '../workflows/write';
 import { type CliOptions,commandInput } from './input';
 
 export function registerWriteCommands(cli: ReturnType<typeof cac>): void {

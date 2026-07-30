@@ -1,6 +1,6 @@
 import type cac from 'cac';
 
-import { cmdConflicts, cmdDistill, cmdPrune } from '../commands';
+import { cmdConflicts, cmdDistill, cmdPrune } from '../workflows/maintenance';
 import { type CliOptions, commandInput, numberOption } from './input';
 
 export function registerMaintenanceCommands(cli: ReturnType<typeof cac>): void {

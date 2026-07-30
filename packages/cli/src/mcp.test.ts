@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 interface RpcResponse {
     error?: { code: number; message: string };
-    id: number | string;
+    id: number | string | null;
     jsonrpc: '2.0';
     result?: Record<string, unknown>;
 }
@@ -90,10 +90,52 @@ describe('MCP JSON-RPC conformance characterization', () => {
         });
     });
 
-    test('malformed JSON does not contaminate stdout framing', () => {
+    test('malformed JSON emits a framed parse error and processing continues', () => {
         const { responses, stderr } = runMcp([{ jsonrpc: '2.0', id: 2, method: 'ping' }], '{not-json}\n');
         expect(stderr).toBe('');
-        expect(responses).toEqual([{ jsonrpc: '2.0', id: 2, result: {} }]);
+        expect(responses).toEqual([
+            { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } },
+            { jsonrpc: '2.0', id: 2, result: {} },
+        ]);
+    });
+
+    test('invalid requests retain valid ids and use JSON-RPC errors', () => {
+        const { responses } = runMcp([
+            { jsonrpc: '1.0', id: 10, method: 'ping' },
+            { jsonrpc: '2.0', id: 11 },
+            { jsonrpc: '2.0', id: 12, method: 'ping', params: [] },
+        ]);
+        expect(responses).toEqual([
+            { jsonrpc: '2.0', id: 10, error: { code: -32600, message: 'Invalid Request' } },
+            { jsonrpc: '2.0', id: 11, error: { code: -32600, message: 'Invalid Request' } },
+            { jsonrpc: '2.0', id: 12, error: { code: -32600, message: 'Invalid Request' } },
+        ]);
+    });
+
+    test('malformed tool arguments return invalid params without invoking the tool', () => {
+        const { responses } = runMcp([
+            {
+                jsonrpc: '2.0',
+                id: 'bad-arguments',
+                method: 'tools/call',
+                params: { name: 'context_remember', arguments: { type: 'fact', title: 42 } },
+            },
+        ]);
+        expect(responses).toEqual([
+            {
+                jsonrpc: '2.0',
+                id: 'bad-arguments',
+                error: { code: -32602, message: 'Invalid params: missing required property "body"' },
+            },
+        ]);
+    });
+
+    test('an explicit null id receives a response while notifications do not', () => {
+        const { responses } = runMcp([
+            { jsonrpc: '2.0', id: null, method: 'ping' },
+            { jsonrpc: '2.0', method: 'ping' },
+        ]);
+        expect(responses).toEqual([{ jsonrpc: '2.0', id: null, result: {} }]);
     });
 
     test('unknown tools return a tool error without a JSON-RPC transport error', () => {
