@@ -4,8 +4,8 @@ import { dirname } from 'node:path';
 import {
     type AgentKind,
     appendEvent,
-    bumpSessionCounter,
     buildBrief,
+    bumpSessionCounter,
     type DB,
     decay,
     endSession,

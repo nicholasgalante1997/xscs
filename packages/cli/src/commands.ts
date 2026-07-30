@@ -34,7 +34,7 @@ import {
     type Workspace,
 } from '@xscs/core';
 
-import { type Args, flagBool, flagList, flagNumber, flagString } from './args';
+import { type CommandInput, flagBool, flagList, flagNumber, flagString } from './command-input';
 import { currentBranch } from './git';
 import { installClaude, installCodex } from './install';
 
@@ -45,7 +45,7 @@ interface Ctx {
     json: boolean;
 }
 
-export function makeCtx(args: Args): Ctx {
+export function makeCtx(args: CommandInput): Ctx {
     const db = openStore();
     const cwd = resolve(flagString(args, 'cwd') ?? process.cwd());
     const workspace = ensureWorkspace(db, cwd);
@@ -72,7 +72,7 @@ export function resolveEntry(): string {
     throw new Error(`xscs is not built — run \`bun run build\` first (expected ${built})`);
 }
 
-export function cmdInit(args: Args): void {
+export function cmdInit(args: CommandInput): void {
     const ctx = makeCtx(args);
     const user = flagBool(args, 'user');
     const target = user ? homedir() : ctx.workspace.root;
@@ -114,7 +114,7 @@ export function cmdInit(args: Args): void {
 
 /* ---------------------------------------------------------------- distill */
 
-export async function cmdDistill(args: Args): Promise<void> {
+export async function cmdDistill(args: CommandInput): Promise<void> {
     const ctx = makeCtx(args);
     const modeFlag = flagString(args, 'mode');
     const mode = modeFlag === 'agent' || modeFlag === 'both' ? modeFlag : 'heuristic';
@@ -158,7 +158,7 @@ export async function cmdDistill(args: Args): Promise<void> {
 
 /* ------------------------------------------------------------------ brief */
 
-export function cmdBrief(args: Args): void {
+export function cmdBrief(args: CommandInput): void {
     const ctx = makeCtx(args);
     const brief = buildBrief(ctx.db, {
         workspace_id: ctx.workspace.id,
@@ -171,7 +171,7 @@ export function cmdBrief(args: Args): void {
     out(ctx, brief.text || '(no durable context stored for this workspace yet)', brief);
 }
 
-export function cmdHandoff(args: Args): void {
+export function cmdHandoff(args: CommandInput): void {
     const ctx = makeCtx(args);
     const text = renderHandoff(ctx.db, ctx.workspace, {
         branch: ctx.branch,
@@ -183,14 +183,14 @@ export function cmdHandoff(args: Args): void {
 
 /* ------------------------------------------------------------------ items */
 
-export function cmdSearch(args: Args): void {
+export function cmdSearch(args: CommandInput): void {
     const ctx = makeCtx(args);
     const query = args.positionals.join(' ') || flagString(args, 'query') || '';
     const hits = searchItems(ctx.db, query, { workspace_id: ctx.workspace.id, limit: flagNumber(args, 'limit') ?? 15 });
     out(ctx, hits.length ? hits.map((h) => formatItem(h.item, h.relevance)).join('\n\n') : '(no matches)', hits);
 }
 
-export function cmdList(args: Args): void {
+export function cmdList(args: CommandInput): void {
     const ctx = makeCtx(args);
     const items = listItems(ctx.db, {
         workspace_id: ctx.workspace.id,
@@ -203,7 +203,7 @@ export function cmdList(args: Args): void {
     out(ctx, items.length ? items.map((i) => formatItem(i)).join('\n\n') : '(nothing stored)', items);
 }
 
-export function cmdRemember(args: Args): void {
+export function cmdRemember(args: CommandInput): void {
     const ctx = makeCtx(args);
     const title = flagString(args, 'title') ?? args.positionals.join(' ');
     const body = flagString(args, 'body') ?? title;
@@ -236,7 +236,7 @@ export function cmdRemember(args: Args): void {
  * control in the system: it is what keeps the store's precision from degrading as
  * its volume grows.
  */
-export function cmdReview(args: Args): void {
+export function cmdReview(args: CommandInput): void {
     const ctx = makeCtx(args);
     const accept = flagList(args, 'accept');
     const reject = flagList(args, 'reject');
@@ -271,14 +271,14 @@ export function cmdReview(args: Args): void {
     );
 }
 
-export function cmdPin(args: Args, pinned: boolean): void {
+export function cmdPin(args: CommandInput, pinned: boolean): void {
     const ctx = makeCtx(args);
     const ids = args.positionals;
     for (const id of ids) setItemPinned(ctx.db, id, pinned);
     out(ctx, `${pinned ? 'pinned' : 'unpinned'} ${ids.length} item(s)`, { ids, pinned });
 }
 
-export function cmdForget(args: Args): void {
+export function cmdForget(args: CommandInput): void {
     const ctx = makeCtx(args);
     const ids = args.positionals;
     const removed: string[] = [];
@@ -290,7 +290,7 @@ export function cmdForget(args: Args): void {
     out(ctx, `deleted ${removed.length} item(s)`, removed);
 }
 
-export function cmdPromote(args: Args): void {
+export function cmdPromote(args: CommandInput): void {
     const ctx = makeCtx(args);
     const scope = flagString(args, 'scope') ?? 'global';
     if (scope !== 'global' && scope !== 'workspace' && scope !== 'branch') {
@@ -306,7 +306,7 @@ export function cmdPromote(args: Args): void {
 
 /* ------------------------------------------------------------- maintenance */
 
-export function cmdConflicts(args: Args): void {
+export function cmdConflicts(args: CommandInput): void {
     const ctx = makeCtx(args);
     const dismiss = flagList(args, 'dismiss');
     if (dismiss.length === 2) {
@@ -329,7 +329,7 @@ export function cmdConflicts(args: Args): void {
     );
 }
 
-export function cmdPrune(args: Args): void {
+export function cmdPrune(args: CommandInput): void {
     const ctx = makeCtx(args);
     const decayReport = decay(ctx.db, { force: true });
     const events = pruneEvents(ctx.db, flagNumber(args, 'events-days') ?? 60);
@@ -347,7 +347,7 @@ export function cmdPrune(args: Args): void {
     );
 }
 
-export function cmdStats(args: Args): void {
+export function cmdStats(args: CommandInput): void {
     const ctx = makeCtx(args);
     const global = flagBool(args, 'all');
     const s = stats(ctx.db, global ? null : ctx.workspace.id);
@@ -373,7 +373,7 @@ export function cmdStats(args: Args): void {
     );
 }
 
-export function cmdDoctor(args: Args): void {
+export function cmdDoctor(args: CommandInput): void {
     const ctx = makeCtx(args);
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
 
@@ -414,7 +414,7 @@ function hasXscsHook(path: string): boolean {
     }
 }
 
-export function cmdWorkspaces(args: Args): void {
+export function cmdWorkspaces(args: CommandInput): void {
     const ctx = makeCtx(args);
     const workspaces = listWorkspaces(ctx.db);
     out(
@@ -429,7 +429,7 @@ export function cmdWorkspaces(args: Args): void {
     );
 }
 
-export function cmdExport(args: Args): void {
+export function cmdExport(args: CommandInput): void {
     const ctx = makeCtx(args);
     const all = flagBool(args, 'all');
     const items = listItems(ctx.db, {

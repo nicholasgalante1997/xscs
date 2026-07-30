@@ -1,46 +1,24 @@
-import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync,mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { flagBool, flagList, flagNumber, flagString, parseArgs } from './args';
-import { hookMap, installClaude, installCodex, mergeHooks } from './install';
+import { describe, expect, test } from 'bun:test';
+
 import { resolveAgent } from './hook';
+import { hookMap, installClaude, installCodex, mergeHooks } from './install';
 
 const ENTRY = '/opt/xscs/packages/cli/dist/xscs.js';
+
+interface SettingsFixture {
+    hooks: Record<string, unknown>;
+    mcpServers: { xscs: { args: string[] } };
+    model?: string;
+    permissions?: { allow: string[] };
+}
 
 function tmp(): string {
     return mkdtempSync(join(tmpdir(), 'xscs-install-'));
 }
-
-describe('arg parsing', () => {
-    test('splits command, positionals and flags', () => {
-        const args = parseArgs(['review', 'itm_1', '--accept', 'itm_2', '--json']);
-        expect(args.command).toBe('review');
-        expect(args.positionals).toEqual(['itm_1']);
-        expect(flagString(args, 'accept')).toBe('itm_2');
-        expect(flagBool(args, 'json')).toBe(true);
-    });
-
-    test('repeated flags collect into a list', () => {
-        const args = parseArgs(['review', '--accept', 'a', '--accept', 'b', '--accept', 'c']);
-        expect(flagList(args, 'accept')).toEqual(['a', 'b', 'c']);
-    });
-
-    test('comma-separated values also become a list', () => {
-        expect(flagList(parseArgs(['list', '--status', 'active,proposed']), 'status')).toEqual(['active', 'proposed']);
-    });
-
-    test('--key=value form', () => {
-        expect(flagNumber(parseArgs(['brief', '--budget=800']), 'budget')).toBe(800);
-    });
-
-    test('a flag followed by another flag is boolean', () => {
-        const args = parseArgs(['distill', '--dry-run', '--mode', 'agent']);
-        expect(flagBool(args, 'dry-run')).toBe(true);
-        expect(flagString(args, 'mode')).toBe('agent');
-    });
-});
 
 describe('hook wiring', () => {
     test('covers the events the design depends on', () => {
@@ -97,11 +75,11 @@ describe('install', () => {
         expect(claude.action).toBe('created');
         expect(codex.action).toBe('created');
 
-        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as Record<string, any>;
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
         expect(settings.hooks.SessionStart).toBeDefined();
         expect(settings.mcpServers.xscs.args).toEqual([ENTRY, 'mcp']);
 
-        const hooks = JSON.parse(readFileSync(codex.path, 'utf8')) as Record<string, any>;
+        const hooks = JSON.parse(readFileSync(codex.path, 'utf8')) as SettingsFixture;
         expect(hooks.hooks.SessionEnd).toBeDefined();
     });
 
@@ -117,7 +95,7 @@ describe('install', () => {
         expect(res.action).toBe('updated');
         expect(res.backup).toBeDefined();
 
-        const settings = JSON.parse(readFileSync(res.path, 'utf8')) as Record<string, any>;
+        const settings = JSON.parse(readFileSync(res.path, 'utf8')) as SettingsFixture;
         expect(settings.model).toBe('opus');
         expect(settings.permissions.allow).toEqual(['Bash(ls:*)']);
         expect(settings.hooks.SessionStart).toBeDefined();
