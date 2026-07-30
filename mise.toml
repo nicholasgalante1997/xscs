@@ -29,6 +29,11 @@ run = "turbo run clean"
 description = "Measure built hook startup"
 run = "bun scripts/benchmark-hooks.ts"
 
+[tasks.prerelease-check]
+description = "Validate npm contents, binary targets, and version agreement"
+depends = ["build"]
+run = "bun scripts/prerelease-check.ts"
+
 [tasks.verify]
 description = "Build, type-check, and test the workspace"
 depends = ["build", "typecheck", "test"]

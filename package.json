@@ -17,6 +17,7 @@
     "dashboard": "bun run --cwd apps/dashboard dev",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "prerelease-check": "bun scripts/prerelease-check.ts",
     "test": "bun test packages",
     "xscs": "bun run packages/cli/index.ts"
   },
