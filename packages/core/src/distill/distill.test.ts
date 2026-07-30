@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { type DB, openStore } from '../db';
+import { bunDatabasePlatform } from '../../bun';
+import { configureDatabasePlatform, type DB, openStore } from '../db';
 import { ensureWorkspace, getSession, listItems, upsertSession } from '../store';
 import { distillSession } from './index';
 
 let db: DB;
+
+configureDatabasePlatform(bunDatabasePlatform);
 
 beforeEach(() => {
     db = openStore({ path: ':memory:', fresh: true });

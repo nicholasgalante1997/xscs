@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { type DB, openStore } from './db';
+import { bunDatabasePlatform } from '../bun';
+import { configureDatabasePlatform, type DB, openStore } from './db';
 import {
     appendEvent,
     ensureWorkspace,
@@ -16,6 +17,8 @@ import {
 } from './store';
 
 let db: DB;
+
+configureDatabasePlatform(bunDatabasePlatform);
 
 beforeEach(() => {
     db = openStore({ path: ':memory:', fresh: true });

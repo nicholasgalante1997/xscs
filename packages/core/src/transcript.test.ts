@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyDirective, distillHeuristically, sentences } from './distill/heuristic';
 import { extractJson } from './distill/agent';
+import { classifyDirective, distillHeuristically, sentences } from './distill/heuristic';
 import { extractPaths, isEnvelopeNoise, parseTranscriptText, summariseForDistill } from './transcript';
 
 const CLAUDE_JSONL = [
