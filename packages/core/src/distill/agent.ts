@@ -1,3 +1,4 @@
+import { processPlatform } from '../platform/process';
 import { DistillResult, type ItemDraft } from '../schema';
 
 export type DistillerBackend = 'claude' | 'codex' | 'none';
@@ -89,10 +90,10 @@ export async function distillWithAgent(input: AgentDistillInput): Promise<AgentD
             : ['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', ...(input.model ? ['-m', input.model] : []), '-'];
 
     try {
-        const proc = Bun.spawn(cmd, {
-            stdin: new TextEncoder().encode(prompt),
-            stdout: 'pipe',
-            stderr: 'pipe',
+        const processResult = await processPlatform().run({
+            command: cmd,
+            stdin: prompt,
+            timeoutMs: timeout,
             env: {
                 ...process.env,
                 // Prevents the child session from firing our own hooks and
@@ -100,14 +101,7 @@ export async function distillWithAgent(input: AgentDistillInput): Promise<AgentD
                 XSCS_INTERNAL: '1',
             },
         });
-
-        const timer = setTimeout(() => proc.kill(), timeout);
-        const [stdout, stderr, exitCode] = await Promise.all([
-            new Response(proc.stdout).text(),
-            new Response(proc.stderr).text(),
-            proc.exited,
-        ]);
-        clearTimeout(timer);
+        const { stdout, stderr, exitCode } = processResult;
 
         if (exitCode !== 0 && !stdout.trim()) {
             return { drafts: [], backend, ok: false, error: `${backend} exited ${exitCode}: ${stderr.slice(0, 400)}` };
@@ -149,8 +143,8 @@ function clamp(n: number): number {
 export function detectBackend(): DistillerBackend {
     const configured = process.env.XSCS_DISTILLER;
     if (configured === 'claude' || configured === 'codex' || configured === 'none') return configured;
-    if (Bun.which('claude')) return 'claude';
-    if (Bun.which('codex')) return 'codex';
+    if (processPlatform().which('claude')) return 'claude';
+    if (processPlatform().which('codex')) return 'codex';
     return 'none';
 }
 

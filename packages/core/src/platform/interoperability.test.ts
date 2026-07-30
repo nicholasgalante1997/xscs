@@ -74,4 +74,71 @@ describe('Bun and Node SQLite interoperability', () => {
         expect(items.map((item) => item.title).sort()).toEqual(['Written by Bun', 'Written by Node']);
         reopened.close();
     });
+
+    test('Bun and Node write concurrently through one WAL store', async () => {
+        const path = temporaryDatabase();
+        const initial = bunDatabasePlatform.open(path, { create: true });
+        initial.run('PRAGMA journal_mode = WAL');
+        initial.run('PRAGMA busy_timeout = 5000');
+        initial.run('PRAGMA synchronous = NORMAL');
+        initial.run('PRAGMA foreign_keys = ON');
+        migrate(initial);
+        const workspace = ensureWorkspace(initial, process.cwd());
+        initial.close();
+
+        const worker = `
+            const runtime = process.argv[1];
+            const path = process.argv[2];
+            const workspace = process.argv[3];
+            const core = await import('@xscs/core');
+            if (runtime === 'bun') {
+                const { bunDatabasePlatform } = await import('@xscs/core/bun');
+                core.configureDatabasePlatform(bunDatabasePlatform);
+            } else {
+                const { createNodeDatabasePlatform } = await import('@xscs/core/node');
+                core.configureDatabasePlatform(await createNodeDatabasePlatform());
+            }
+            const db = core.openStore({ path, fresh: true });
+            for (let index = 0; index < 25; index++) {
+                core.putItem(db, {
+                    type: 'fact',
+                    title: runtime + ' concurrent item ' + index,
+                    body: runtime + ' writes safely through WAL ' + index,
+                    scope: 'workspace',
+                    workspace_id: workspace,
+                    source: 'test:' + runtime
+                });
+            }
+            db.close();
+        `;
+        const cwd = resolve(import.meta.dir, '../../../cli');
+        const bun = Bun.spawn(['bun', '--eval', worker, 'bun', path, workspace.id], {
+            cwd,
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        const node = Bun.spawn(['node', '--input-type=module', '--eval', worker, 'node', path, workspace.id], {
+            cwd,
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        const [bunExit, nodeExit, bunError, nodeError] = await Promise.all([
+            bun.exited,
+            node.exited,
+            new Response(bun.stderr).text(),
+            new Response(node.stderr).text(),
+        ]);
+        expect({ bunExit, bunError, nodeExit, nodeError }).toEqual({
+            bunExit: 0,
+            bunError: '',
+            nodeExit: 0,
+            nodeError: '',
+        });
+
+        const reopened = bunDatabasePlatform.open(path);
+        const items = listItems(reopened, { workspace_id: workspace.id, status: 'active', limit: 100 });
+        expect(items).toHaveLength(50);
+        expect(new Set(items.map((item) => item.source))).toEqual(new Set(['test:bun', 'test:node']));
+        reopened.close();
+    });
 });

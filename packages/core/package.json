@@ -28,6 +28,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "prebuild": "rm -rf dist",
     "build": "run-s bundle types",
     "bundle": "bun run build.ts",
     "types": "tsc -p tsconfig.json",
