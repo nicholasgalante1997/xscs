@@ -1,0 +1,34 @@
+[tools]
+bun = "1.3"
+node = "24"
+
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+
+[tasks.build]
+description = "Build every workspace package"
+run = "turbo run build"
+
+[tasks.typecheck]
+description = "Type-check every workspace package"
+run = "turbo run check-types"
+
+[tasks.test]
+description = "Run the complete test suite"
+run = "turbo run test"
+
+[tasks.lint]
+description = "Lint the workspace"
+run = "bun run lint"
+
+[tasks.clean]
+description = "Remove generated package artifacts"
+run = "turbo run clean"
+
+[tasks.benchmark-hooks]
+description = "Measure built hook startup"
+run = "bun scripts/benchmark-hooks.ts"
+
+[tasks.verify]
+description = "Build, type-check, and test the workspace"
+depends = ["build", "typecheck", "test"]
