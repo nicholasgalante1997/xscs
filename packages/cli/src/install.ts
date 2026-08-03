@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { ConfigurationError } from './errors';
 import {
     claudeHarness,
     codexHarness,
@@ -87,7 +88,7 @@ function readJson(file: string): Record<string, unknown> {
         return isRecord(parsed) ? parsed : {};
     } catch {
         // A settings file we cannot parse is a settings file we must not rewrite.
-        throw new Error(`${file} exists but is not valid JSON — fix or move it before installing hooks.`);
+        throw new ConfigurationError(`${file} exists but is not valid JSON — fix or move it before installing hooks.`);
     }
 }
 

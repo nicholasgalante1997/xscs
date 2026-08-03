@@ -1,5 +1,6 @@
 import cac from 'cac';
 
+import { CliError } from './errors';
 import { registerMaintenanceCommands } from './registrations/maintenance';
 import { registerReadCommands } from './registrations/read';
 import { registerSetupCommands } from './registrations/setup';
@@ -52,5 +53,11 @@ export async function runInteractiveCli(argv: string[]): Promise<void> {
         cli.outputHelp();
         return;
     }
-    await cli.runMatchedCommand();
+    try {
+        await cli.runMatchedCommand();
+    } catch (error) {
+        if (!(error instanceof CliError)) throw error;
+        console.error(error.message);
+        process.exitCode = error.exitCode;
+    }
 }

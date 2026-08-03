@@ -1,51 +1,48 @@
 import {
     buildBrief,
-    type ItemStatus,
-    type ItemType,
     listItems,
     renderHandoff,
     searchItems,
 } from '@xscs/core';
 
-import {
-    type CommandInput,
-    flagBool,
-    flagList,
-    flagNumber,
-    flagString,
-} from '../command-input';
 import { makeCommandContext, writeCommandOutput } from './context';
 import { formatItem } from './format';
+import type {
+    AllInput,
+    HandoffInput,
+    ListInput,
+    QueryInput,
+} from './input';
 
-export function cmdBrief(input: CommandInput): void {
+export function cmdBrief(input: QueryInput): void {
     const context = makeCommandContext(input);
     const brief = buildBrief(context.db, {
         workspace_id: context.workspace.id,
         branch: context.branch,
-        query: flagString(input, 'query') ?? (input.positionals.join(' ') || null),
-        budgetTokens: flagNumber(input, 'budget') ?? 1200,
+        query: input.query.join(' ') || null,
+        budgetTokens: input.budget ?? 1200,
         reason: 'manual',
         workspaceName: context.workspace.name,
     });
     writeCommandOutput(context, brief.text || '(no durable context stored for this workspace yet)', brief);
 }
 
-export function cmdHandoff(input: CommandInput): void {
+export function cmdHandoff(input: HandoffInput): void {
     const context = makeCommandContext(input);
     const text = renderHandoff(context.db, context.workspace, {
         branch: context.branch,
-        write: !flagBool(input, 'stdout'),
-        budgetTokens: flagNumber(input, 'budget'),
+        write: !input.stdout,
+        budgetTokens: input.budget,
     });
     writeCommandOutput(context, text, { text });
 }
 
-export function cmdSearch(input: CommandInput): void {
+export function cmdSearch(input: QueryInput): void {
     const context = makeCommandContext(input);
-    const query = input.positionals.join(' ') || flagString(input, 'query') || '';
+    const query = input.query.join(' ');
     const hits = searchItems(context.db, query, {
         workspace_id: context.workspace.id,
-        limit: flagNumber(input, 'limit') ?? 15,
+        limit: input.limit ?? 15,
     });
     writeCommandOutput(
         context,
@@ -54,15 +51,13 @@ export function cmdSearch(input: CommandInput): void {
     );
 }
 
-export function cmdList(input: CommandInput): void {
+export function cmdList(input: ListInput): void {
     const context = makeCommandContext(input);
-    const statuses = flagList(input, 'status') as ItemStatus[];
-    const types = flagList(input, 'type') as ItemType[];
     const items = listItems(context.db, {
         workspace_id: context.workspace.id,
-        status: statuses.length ? statuses : ['active'],
-        type: types.length ? types : undefined,
-        limit: flagNumber(input, 'limit') ?? 60,
+        status: input.statuses.length ? input.statuses : ['active'],
+        type: input.types.length ? input.types : undefined,
+        limit: input.limit ?? 60,
     });
     writeCommandOutput(
         context,
@@ -71,11 +66,10 @@ export function cmdList(input: CommandInput): void {
     );
 }
 
-export function cmdExport(input: CommandInput): void {
+export function cmdExport(input: AllInput): void {
     const context = makeCommandContext(input);
-    const all = flagBool(input, 'all');
     const items = listItems(context.db, {
-        workspace_id: all ? null : context.workspace.id,
+        workspace_id: input.all ? null : context.workspace.id,
         status: ['active', 'proposed', 'archived', 'superseded'],
         limit: 10_000,
     });

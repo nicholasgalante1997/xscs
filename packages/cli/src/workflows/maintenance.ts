@@ -10,23 +10,19 @@ import {
     renderHandoff,
 } from '@xscs/core';
 
-import {
-    type CommandInput,
-    flagBool,
-    flagList,
-    flagNumber,
-    flagString,
-} from '../command-input';
 import { makeCommandContext, writeCommandOutput } from './context';
+import type {
+    ConflictsInput,
+    DistillInput,
+    PruneInput,
+} from './input';
 
-export async function cmdDistill(input: CommandInput): Promise<void> {
+export async function cmdDistill(input: DistillInput): Promise<void> {
     const context = makeCommandContext(input);
-    const modeFlag = flagString(input, 'mode');
+    const modeFlag = input.mode;
     const mode = modeFlag === 'agent' || modeFlag === 'both' ? modeFlag : 'heuristic';
-    const dryRun = flagBool(input, 'dry-run');
-    const quiet = flagBool(input, 'quiet');
 
-    const sessionId = flagString(input, 'session');
+    const sessionId = input.session;
     const reports = sessionId
         ? await (async () => {
               const session = getSession(context.db, sessionId);
@@ -34,18 +30,18 @@ export async function cmdDistill(input: CommandInput): Promise<void> {
               return [
                   await distillSession(context.db, session, {
                       mode,
-                      dryRun,
-                      backend: flagString(input, 'backend') as never,
+                      dryRun: input.dryRun,
+                      backend: input.backend,
                   }),
               ];
           })()
         : await distillPending(context.db, {
               mode,
-              dryRun,
-              limit: flagNumber(input, 'limit') ?? 10,
+              dryRun: input.dryRun,
+              limit: input.limit ?? 10,
           });
 
-    if (flagBool(input, 'handoff')) {
+    if (input.handoff) {
         try {
             renderHandoff(context.db, context.workspace, { branch: context.branch });
         } catch {
@@ -53,7 +49,7 @@ export async function cmdDistill(input: CommandInput): Promise<void> {
         }
     }
 
-    if (quiet && !context.json) return;
+    if (input.quiet && !context.json) return;
 
     const created = reports.reduce((count, report) => count + report.created, 0);
     const reinforced = reports.reduce((count, report) => count + report.reinforced, 0);
@@ -61,25 +57,27 @@ export async function cmdDistill(input: CommandInput): Promise<void> {
     writeCommandOutput(
         context,
         [
-            `distilled ${reports.length} session(s) in ${mode} mode${dryRun ? ' (dry run)' : ''}`,
+            `distilled ${reports.length} session(s) in ${mode} mode${input.dryRun ? ' (dry run)' : ''}`,
             `  created:    ${created}`,
             `  reinforced: ${reinforced}`,
-            ...(dryRun ? reports.flatMap((report) => report.drafts.map((draft) => `  · [${draft.type}] ${draft.title}`)) : []),
+            ...(input.dryRun
+                ? reports.flatMap((report) => report.drafts.map((draft) => `  · [${draft.type}] ${draft.title}`))
+                : []),
             ...errors.map((error) => `  ! ${error.session_id}: ${error.error}`),
         ].join('\n'),
         reports,
     );
 }
 
-export function cmdConflicts(input: CommandInput): void {
+export function cmdConflicts(input: ConflictsInput): void {
     const context = makeCommandContext(input);
-    const dismiss = flagList(input, 'dismiss');
+    const { dismiss } = input;
     if (dismiss.length === 2) {
         dismissDrift(context.db, dismiss[0]!, dismiss[1]!);
         writeCommandOutput(context, 'dismissed', dismiss);
         return;
     }
-    const candidates = findDriftCandidates(context.db, context.workspace.id, flagNumber(input, 'limit') ?? 20);
+    const candidates = findDriftCandidates(context.db, context.workspace.id, input.limit ?? 20);
     writeCommandOutput(
         context,
         candidates.length
@@ -94,11 +92,11 @@ export function cmdConflicts(input: CommandInput): void {
     );
 }
 
-export function cmdPrune(input: CommandInput): void {
+export function cmdPrune(input: PruneInput): void {
     const context = makeCommandContext(input);
     const decayReport = decay(context.db, { force: true });
-    const events = pruneEvents(context.db, flagNumber(input, 'events-days') ?? 60);
-    const briefs = pruneBriefs(context.db, flagNumber(input, 'briefs-days') ?? 30);
+    const events = pruneEvents(context.db, input.eventsDays ?? 60);
+    const briefs = pruneBriefs(context.db, input.briefsDays ?? 30);
     context.db.run('VACUUM');
     writeCommandOutput(
         context,

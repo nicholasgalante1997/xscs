@@ -1,7 +1,11 @@
 import type cac from 'cac';
 
 import { cmdDoctor, cmdInit } from '../workflows/setup';
-import { type CliOptions,commandInput } from './input';
+import {
+    booleanOption,
+    type CliOptions,
+    contextInput,
+} from './input';
 
 export function registerSetupCommands(cli: ReturnType<typeof cac>): void {
     cli.command('init', 'Wire hooks into this project or the user home directory')
@@ -10,9 +14,18 @@ export function registerSetupCommands(cli: ReturnType<typeof cac>): void {
         .option('--codex', 'Install Codex hooks only')
         .option('--no-mcp', 'Do not register Claude Code MCP tools')
         .option('--dry-run', 'Show changes without writing')
-        .action((options: CliOptions) => cmdInit(commandInput('init', [], options)));
+        .action((options: CliOptions) =>
+            cmdInit({
+                ...contextInput(options),
+                user: booleanOption(options.user),
+                claude: booleanOption(options.claude),
+                codex: booleanOption(options.codex),
+                withMcp: options.mcp !== false,
+                dryRun: booleanOption(options.dryRun),
+            }),
+        );
 
     cli.command('doctor', 'Check store, hook wiring, and harness availability').action((options: CliOptions) =>
-        cmdDoctor(commandInput('doctor', [], options)),
+        cmdDoctor(contextInput(options)),
     );
 }

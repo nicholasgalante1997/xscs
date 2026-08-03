@@ -1,7 +1,15 @@
+import type { DistillerBackend } from '@xscs/core';
 import type cac from 'cac';
 
 import { cmdConflicts, cmdDistill, cmdPrune } from '../workflows/maintenance';
-import { type CliOptions, commandInput, numberOption } from './input';
+import {
+    booleanOption,
+    type CliOptions,
+    contextInput,
+    listOption,
+    numberOption,
+    stringOption,
+} from './input';
 
 export function registerMaintenanceCommands(cli: ReturnType<typeof cac>): void {
     cli.command('distill', 'Distill captured sessions into durable context')
@@ -13,17 +21,40 @@ export function registerMaintenanceCommands(cli: ReturnType<typeof cac>): void {
         .option('--dry-run', 'Return drafts without writing')
         .option('--handoff', 'Regenerate the workspace handoff')
         .option('--quiet', 'Suppress human output')
-        .action(async (options: CliOptions) => cmdDistill(commandInput('distill', [], options)));
+        .action(async (options: CliOptions) =>
+            cmdDistill({
+                ...contextInput(options),
+                session: stringOption(options.session),
+                mode: stringOption(options.mode),
+                backend: stringOption(options.backend) as DistillerBackend | undefined,
+                limit: numberOption(options.limit),
+                dryRun: booleanOption(options.dryRun),
+                handoff: booleanOption(options.handoff),
+                quiet: booleanOption(options.quiet),
+            }),
+        );
 
     cli.command('conflicts', 'List contradictory or duplicate memories')
         .option('--dismiss <id>', 'Dismiss a pair; pass twice')
         .option('--limit <count>', 'Maximum pairs')
-        .action((options: CliOptions) => cmdConflicts(commandInput('conflicts', [], options)));
+        .action((options: CliOptions) =>
+            cmdConflicts({
+                ...contextInput(options),
+                dismiss: listOption(options.dismiss),
+                limit: numberOption(options.limit),
+            }),
+        );
 
     cli.command('prune', 'Run decay and prune consumed history')
         .option('--events-days <days>', 'Consumed event retention')
         .option('--briefs-days <days>', 'Brief retention')
-        .action((options: CliOptions) => cmdPrune(commandInput('prune', [], options)));
+        .action((options: CliOptions) =>
+            cmdPrune({
+                ...contextInput(options),
+                eventsDays: numberOption(options.eventsDays),
+                briefsDays: numberOption(options.briefsDays),
+            }),
+        );
 
     cli.command('serve', 'Open the curation dashboard')
         .option('--port <port>', 'Loopback port', { default: 4319 })

@@ -1,38 +1,30 @@
-import type { CommandInput } from '../command-input';
+import type { ContextInput } from '../workflows/input';
 
 export type CliOptions = Record<string, unknown>;
 
-export function commandInput(command: string, positionals: string[], options: CliOptions): CommandInput {
-    const flags: CommandInput['flags'] = {};
-    const names: Record<string, string> = {
-        acceptAll: 'accept-all',
-        briefsDays: 'briefs-days',
-        dryRun: 'dry-run',
-        eventsDays: 'events-days',
+export function contextInput(options: CliOptions): ContextInput {
+    return {
+        cwd: stringOption(options.cwd),
+        json: booleanOption(options.json),
     };
-    for (const [key, value] of Object.entries(options)) {
-        if (key === '--') continue;
-        const name = names[key] ?? key;
-        if (key === 'mcp' && value === false) {
-            flags['no-mcp'] = true;
-            continue;
-        }
-        if (key === 'open' && value === false) {
-            flags['no-open'] = true;
-            continue;
-        }
-        if (value !== undefined) flags[name] = normalizeOption(value);
-    }
-    return { command, positionals, flags };
+}
+
+export function stringOption(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value) && value.length) return String(value[0]);
+    return undefined;
+}
+
+export function booleanOption(value: unknown): boolean {
+    return value === true || value === 'true';
 }
 
 export function numberOption(value: unknown): number | undefined {
     const number = Number(value);
-    return Number.isFinite(number) ? number : undefined;
+    return value !== undefined && Number.isFinite(number) ? number : undefined;
 }
 
-function normalizeOption(value: unknown): string | boolean | string[] {
-    if (Array.isArray(value)) return value.map(String);
-    if (typeof value === 'boolean') return value;
-    return String(value);
+export function listOption(value: unknown): string[] {
+    const values = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+    return values.flatMap((entry) => String(entry).split(',')).map((entry) => entry.trim()).filter(Boolean);
 }

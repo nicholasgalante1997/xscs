@@ -10,9 +10,14 @@ import {
     storePath,
 } from '@xscs/core';
 
-import { type CommandInput, flagBool } from '../command-input';
+import { ConfigurationError } from '../errors';
 import { installClaude, installCodex } from '../install';
 import { makeCommandContext, writeCommandOutput } from './context';
+import type {
+    AllInput,
+    ContextInput,
+    InitInput,
+} from './input';
 
 /**
  * Hooks must point at the built bundle, never at TypeScript source: the harness
@@ -23,24 +28,22 @@ export function resolveEntry(): string {
     if (main.endsWith('.js')) return main;
     const built = resolve(main, '..', 'dist', 'xscs.js');
     if (existsSync(built)) return built;
-    throw new Error(`xscs is not built — run \`bun run build\` first (expected ${built})`);
+    throw new ConfigurationError(`xscs is not built — run \`bun run build\` first (expected ${built})`);
 }
 
-export function cmdInit(input: CommandInput): void {
+export function cmdInit(input: InitInput): void {
     const context = makeCommandContext(input);
-    const user = flagBool(input, 'user');
-    const target = user ? homedir() : context.workspace.root;
+    const target = input.user ? homedir() : context.workspace.root;
     const entry = resolveEntry();
-    const both = !flagBool(input, 'claude') && !flagBool(input, 'codex');
-    const dryRun = flagBool(input, 'dry-run');
+    const both = !input.claude && !input.codex;
     const results: Array<{ harness: string; path: string; action: string; backup?: string }> = [];
 
-    if (both || flagBool(input, 'claude')) {
-        const result = installClaude({ target, entry, withMcp: !flagBool(input, 'no-mcp'), dryRun });
+    if (both || input.claude) {
+        const result = installClaude({ target, entry, withMcp: input.withMcp, dryRun: input.dryRun });
         results.push({ harness: 'claude', ...result });
     }
-    if (both || flagBool(input, 'codex')) {
-        const result = installCodex({ target, entry, dryRun });
+    if (both || input.codex) {
+        const result = installCodex({ target, entry, dryRun: input.dryRun });
         results.push({ harness: 'codex', ...result });
     }
 
@@ -51,13 +54,13 @@ export function cmdInit(input: CommandInput): void {
     writeCommandOutput(
         context,
         [
-            `xscs hooks ${dryRun ? 'would be ' : ''}installed for ${context.workspace.name}`,
+            `xscs hooks ${input.dryRun ? 'would be ' : ''}installed for ${context.workspace.name}`,
             ...lines,
             '',
             `store:  ${storePath()}`,
             `entry:  ${entry}`,
             '',
-            flagBool(input, 'no-mcp') || !(both || flagBool(input, 'claude'))
+            !input.withMcp || !(both || input.claude)
                 ? ''
                 : 'Claude Code will expose the xscs MCP tools next session (context_search, context_remember, …).',
             'For Codex, register the MCP server with:',
@@ -69,9 +72,9 @@ export function cmdInit(input: CommandInput): void {
     );
 }
 
-export function cmdStats(input: CommandInput): void {
+export function cmdStats(input: AllInput): void {
     const context = makeCommandContext(input);
-    const global = flagBool(input, 'all');
+    const global = input.all;
     const report = stats(context.db, global ? null : context.workspace.id);
     const sessions = recentSessions(context.db, global ? null : context.workspace.id, 5);
     writeCommandOutput(
@@ -95,7 +98,7 @@ export function cmdStats(input: CommandInput): void {
     );
 }
 
-export function cmdDoctor(input: CommandInput): void {
+export function cmdDoctor(input: ContextInput): void {
     const context = makeCommandContext(input);
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
 
@@ -137,7 +140,7 @@ export function cmdDoctor(input: CommandInput): void {
     );
 }
 
-export function cmdWorkspaces(input: CommandInput): void {
+export function cmdWorkspaces(input: ContextInput): void {
     const context = makeCommandContext(input);
     const workspaces = listWorkspaces(context.db);
     writeCommandOutput(

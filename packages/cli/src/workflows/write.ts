@@ -1,7 +1,6 @@
 import {
     deleteItem,
     getItem,
-    type ItemType,
     listItems,
     putItem,
     setItemPinned,
@@ -9,36 +8,34 @@ import {
     setItemStatus,
 } from '@xscs/core';
 
-import {
-    type CommandInput,
-    flagBool,
-    flagList,
-    flagNumber,
-    flagString,
-} from '../command-input';
+import { UsageError } from '../errors';
 import { makeCommandContext, writeCommandOutput } from './context';
 import { formatItem } from './format';
+import type {
+    ItemIdsInput,
+    PromoteInput,
+    RememberInput,
+    ReviewInput,
+} from './input';
 
-export function cmdRemember(input: CommandInput): void {
+export function cmdRemember(input: RememberInput): void {
     const context = makeCommandContext(input);
-    const title = flagString(input, 'title') ?? input.positionals.join(' ');
-    const body = flagString(input, 'body') ?? title;
+    const title = input.title ?? input.positionalTitle.join(' ');
+    const body = input.body ?? title;
     if (!title) {
-        console.error('usage: xscs remember --type <type> --title "..." [--body "..."] [--why "..."] [--pin]');
-        process.exitCode = 1;
-        return;
+        throw new UsageError('usage: xscs remember --type <type> --title "..." [--body "..."] [--why "..."] [--pin]');
     }
-    const scope = flagString(input, 'scope');
+    const scope = input.scope;
     const result = putItem(context.db, {
-        type: (flagString(input, 'type') ?? 'fact') as ItemType,
+        type: input.type ?? 'fact',
         title,
         body,
-        why: flagString(input, 'why') ?? null,
+        why: input.why ?? null,
         scope: scope === 'global' || scope === 'branch' || scope === 'session' ? scope : 'workspace',
         scope_key: scope === 'branch' ? context.branch : null,
-        tags: flagList(input, 'tag'),
-        confidence: flagNumber(input, 'confidence') ?? 0.7,
-        pinned: flagBool(input, 'pin'),
+        tags: input.tags,
+        confidence: input.confidence ?? 0.7,
+        pinned: input.pin,
         status: 'active',
         source: 'manual',
         workspace_id: context.workspace.id,
@@ -50,10 +47,9 @@ export function cmdRemember(input: CommandInput): void {
     );
 }
 
-export function cmdReview(input: CommandInput): void {
+export function cmdReview(input: ReviewInput): void {
     const context = makeCommandContext(input);
-    const accept = flagList(input, 'accept');
-    const reject = flagList(input, 'reject');
+    const { accept, reject } = input;
 
     if (accept.length || reject.length) {
         for (const id of accept) setItemStatus(context.db, id, 'active');
@@ -62,7 +58,7 @@ export function cmdReview(input: CommandInput): void {
         return;
     }
 
-    if (flagBool(input, 'accept-all')) {
+    if (input.acceptAll) {
         const proposed = listItems(context.db, {
             workspace_id: context.workspace.id,
             status: 'proposed',
@@ -93,17 +89,17 @@ export function cmdReview(input: CommandInput): void {
     );
 }
 
-export function cmdPin(input: CommandInput, pinned: boolean): void {
+export function cmdPin(input: ItemIdsInput, pinned: boolean): void {
     const context = makeCommandContext(input);
-    const ids = input.positionals;
+    const { ids } = input;
     for (const id of ids) setItemPinned(context.db, id, pinned);
     writeCommandOutput(context, `${pinned ? 'pinned' : 'unpinned'} ${ids.length} item(s)`, { ids, pinned });
 }
 
-export function cmdForget(input: CommandInput): void {
+export function cmdForget(input: ItemIdsInput): void {
     const context = makeCommandContext(input);
     const removed: string[] = [];
-    for (const id of input.positionals) {
+    for (const id of input.ids) {
         if (!getItem(context.db, id)) continue;
         deleteItem(context.db, id);
         removed.push(id);
@@ -111,19 +107,17 @@ export function cmdForget(input: CommandInput): void {
     writeCommandOutput(context, `deleted ${removed.length} item(s)`, removed);
 }
 
-export function cmdPromote(input: CommandInput): void {
+export function cmdPromote(input: PromoteInput): void {
     const context = makeCommandContext(input);
-    const scope = flagString(input, 'scope') ?? 'global';
+    const { scope } = input;
     if (scope !== 'global' && scope !== 'workspace' && scope !== 'branch') {
-        console.error('scope must be global, workspace or branch');
-        process.exitCode = 1;
-        return;
+        throw new UsageError('scope must be global, workspace or branch');
     }
-    for (const id of input.positionals) {
+    for (const id of input.ids) {
         setItemScope(context.db, id, scope, scope === 'branch' ? context.branch : null);
     }
-    writeCommandOutput(context, `moved ${input.positionals.length} item(s) to ${scope} scope`, {
-        ids: input.positionals,
+    writeCommandOutput(context, `moved ${input.ids.length} item(s) to ${scope} scope`, {
+        ids: input.ids,
         scope,
     });
 }

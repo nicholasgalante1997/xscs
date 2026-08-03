@@ -7,8 +7,8 @@ import {
     type Workspace,
 } from '@xscs/core';
 
-import { type CommandInput, flagBool, flagString } from '../command-input';
 import { currentBranch } from '../git';
+import type { ContextInput } from './input';
 
 export interface CommandContext {
     db: DB;
@@ -17,15 +17,15 @@ export interface CommandContext {
     json: boolean;
 }
 
-export function makeCommandContext(input: CommandInput): CommandContext {
+export function makeCommandContext(input: ContextInput): CommandContext {
     const db = openStore();
-    const cwd = resolve(flagString(input, 'cwd') ?? process.cwd());
+    const cwd = resolve(input.cwd ?? process.cwd());
     const workspace = ensureWorkspace(db, cwd);
     return {
         db,
         workspace,
         branch: currentBranch(workspace.root),
-        json: flagBool(input, 'json'),
+        json: input.json,
     };
 }
 
