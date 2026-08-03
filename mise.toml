@@ -34,6 +34,24 @@ description = "Validate npm contents, binary targets, and version agreement"
 depends = ["build"]
 run = "bun scripts/prerelease-check.ts"
 
+[tasks.npm-package-smoke]
+description = "Pack, install, and exercise both npm binaries"
+depends = ["build"]
+run = "bun scripts/smoke-npm-package.ts"
+
+[tasks.standalone-build]
+description = "Cross-compile the standalone release matrix"
+depends = ["build"]
+run = "bun scripts/build-standalone.ts"
+
+[tasks.standalone-checksums]
+description = "Generate SHA-256 checksums for standalone artifacts"
+run = "bun scripts/checksums.ts"
+
+[tasks.standalone-smoke]
+description = "Smoke-test one native standalone artifact"
+run = "bun scripts/smoke-standalone.ts"
+
 [tasks.verify]
 description = "Build, type-check, and test the workspace"
 depends = ["build", "typecheck", "test"]

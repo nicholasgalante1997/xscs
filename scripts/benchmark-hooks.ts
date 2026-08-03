@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const entry = resolve(import.meta.dir, '../packages/cli/dist/xscs.js');
+const entry = resolve(process.env.XSCS_BENCHMARK_ENTRY ?? resolve(import.meta.dir, '../packages/cli/dist/xscs.js'));
 const runs = Number(process.argv[2] ?? 30);
 
 if (!existsSync(entry)) {

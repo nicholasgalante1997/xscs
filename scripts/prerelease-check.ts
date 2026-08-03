@@ -46,7 +46,7 @@ if (packed.exitCode !== 0) {
 } else {
     const result = (JSON.parse(packed.stdout.toString()) as PackResult[])[0];
     const paths = result?.files.map((file) => file.path) ?? [];
-    const required = [
+    const allowed = new Set([
         'dist/xscs.js',
         'dist/xscs.node.js',
         'dist/client/app.js',
@@ -54,10 +54,10 @@ if (packed.exitCode !== 0) {
         'CHANGELOG.md',
         'LICENSE',
         'package.json',
-    ];
-    for (const path of required) if (!paths.includes(path)) failures.push(`tarball is missing ${path}`);
+    ]);
+    for (const path of allowed) if (!paths.includes(path)) failures.push(`tarball is missing ${path}`);
     for (const path of paths) {
-        if (path.endsWith('.ts') || path.includes('/src/')) failures.push(`tarball contains source runtime file ${path}`);
+        if (!allowed.has(path)) failures.push(`tarball contains unexpected file ${path}`);
     }
 }
 

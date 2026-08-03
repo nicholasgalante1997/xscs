@@ -18,6 +18,10 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prerelease-check": "bun scripts/prerelease-check.ts",
+    "npm-package-smoke": "bun scripts/smoke-npm-package.ts",
+    "standalone:build": "bun scripts/build-standalone.ts",
+    "standalone:checksums": "bun scripts/checksums.ts",
+    "standalone:smoke": "bun scripts/smoke-standalone.ts",
     "test": "bun test packages",
     "xscs": "bun run packages/cli/index.ts"
   },

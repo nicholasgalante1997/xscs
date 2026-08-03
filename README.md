@@ -24,7 +24,24 @@ is in [DESIGN.md](./DESIGN.md).
 
 ## Install
 
-Requires Bun ≥ 1.3.
+### npm (Node 24)
+
+```bash
+npm install --global cross-session-summary
+xscs init
+```
+
+The npm package also exposes `xscs-bun` for users who prefer Bun ≥ 1.3. Both
+commands open the same `~/.xscs/store.db`; switching runtimes never creates a
+second store or a runtime-specific migration path.
+
+### Standalone executable
+
+Versioned GitHub Releases contain single-file executables for macOS arm64/x64,
+Linux arm64/x64, and Windows x64, plus `SHA256SUMS`. Standalone executables need
+neither Node nor Bun and include the dashboard client.
+
+### Source checkout
 
 ```bash
 bun install
@@ -36,7 +53,8 @@ bun run xscs init      # wires .claude/settings.json and .codex/hooks.json
 `--user` to wire your home directory instead of just this project, `--dry-run` to
 see what it would do, `--claude` / `--codex` to pick one harness.
 
-For Codex's MCP tools (Claude Code's are registered by `init`):
+For Codex's MCP tools (Claude Code's are registered by `init`), use the same
+runtime that owns the installed command. From a source checkout:
 
 ```bash
 codex mcp add xscs -- $(which bun) $PWD/packages/cli/dist/xscs.js mcp
@@ -137,14 +155,21 @@ Deliberate writes beat inferred ones — the agent knows what surprised it.
 ```
 packages/core        storage, distillation, recall, decay, drift, handoff
 packages/cli         xscs binary: hook bridge, MCP server, curation commands
-apps/dashboard       Bun.serve + React 19 curation UI
+apps/dashboard       runtime-neutral loopback server + React 19 curation UI
+internal/build-utils shared Bun build conventions
 ```
 
 ```bash
-bun test              # 75 tests
-bunx turbo build
-bunx turbo check-types
+mise run lint
+mise run build
+mise run typecheck
+mise run test
+mise run prerelease-check
 ```
+
+Architecture decisions live in [`docs/adr`](./docs/adr), the compatibility
+contract in [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md), and the release
+runbook in [`docs/RELEASING.md`](./docs/RELEASING.md).
 
 ---
 

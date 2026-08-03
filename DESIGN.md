@@ -1,7 +1,7 @@
 # xscs — cross-session context persistence for coding agents
 
-**Status:** working implementation, v0.1
-**Runtime:** Bun 1.3+, TypeScript, `bun:sqlite`, React 19
+**Status:** `0.2.0` prerelease implementation
+**Runtimes:** Bun 1.3+ and Node 24 ESM, TypeScript, SQLite, React 19
 **Harnesses:** Claude Code and Codex CLI, sharing one store
 
 ---
@@ -265,11 +265,26 @@ packages/cli         xscs binary: hook bridge, MCP server, curation commands
 apps/dashboard       Bun.serve + React 19 curation UI
 ```
 
-Bun workspaces + Turbo, mirroring the Project-Arcturus layout: each package
-bundles with its own `build.ts` via `Bun.build` (`packages: 'external'`), emits
-declarations with `tsc`, and exports **built JS from `dist/`** — never TypeScript
-source. Hooks point at `packages/cli/dist/xscs.js`; `xscs init` refuses to wire
-an unbuilt tree.
+Bun workspaces + Turbo orchestrate the repository. Every package bundles built
+JavaScript to `dist/`, emits declarations with `tsc`, and never exports TypeScript
+source. The npm package bundles private workspace libraries and leaves CAC as its
+only runtime dependency.
+
+Runtime-specific behavior is confined to composition roots. Narrow database,
+process, and server interfaces have Bun and Node implementations; shared command,
+hook, MCP, storage, and dashboard workflows do not branch on the runtime. Both
+database adapters apply the same migrations, pragmas, WAL behavior, FTS5 queries,
+and locking policy to the exact same store.
+
+Harness-specific behavior follows the same shape. Claude Code and Codex adapters
+own payload recognition, transcript parsing entry, attribution, lifecycle wiring,
+timeouts, and configuration generation. Shared lifecycle handlers consume the
+normalized payload.
+
+The interactive command tree uses CAC and command-specific typed inputs. A tiny
+bootstrap recognizes `hook` and `mcp` before loading CAC; dashboard code is loaded
+only by `serve`. Hooks installed from a source checkout point at
+`packages/cli/dist/xscs.js`, and `xscs init` refuses to wire an unbuilt tree.
 
 ### Schema
 
