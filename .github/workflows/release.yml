@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.0.0', '24.x']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run build
+      - run: bun run check-types
+      - run: bun test
+        env:
+          XSCS_NETWORK_TESTS: '1'
+      - run: bun run prerelease-check
+      - run: bun run npm-package-smoke
+
+  build:
+    name: Build (${{ matrix.artifact }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: bun-darwin-arm64
+            artifact: xscs-darwin-arm64
+          - runner: macos-15-intel
+            target: bun-darwin-x64-baseline
+            artifact: xscs-darwin-x64
+          - runner: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            artifact: xscs-linux-arm64
+          - runner: ubuntu-24.04
+            target: bun-linux-x64-baseline
+            artifact: xscs-linux-x64
+          - runner: windows-2025
+            target: bun-windows-x64-baseline
+            artifact: xscs-windows-x64.exe
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun scripts/build-standalone.ts --target ${{ matrix.target }}
+      - run: bun scripts/smoke-standalone.ts release/${{ matrix.artifact }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  publish:
+    name: Assemble GitHub Release
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - uses: actions/download-artifact@v7
+        with:
+          path: release
+          merge-multiple: true
+      - name: Validate release version
+        run: bun scripts/validate-release-tag.ts "${GITHUB_REF_NAME}"
+      - run: bun scripts/checksums.ts release
+      - run: bun scripts/checksums.ts release --verify
+      - run: cp LICENSE release/LICENSE
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          release/xscs-*
+          release/SHA256SUMS
+          release/LICENSE
+          --generate-notes
+          --verify-tag
+          ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
