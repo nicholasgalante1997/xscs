@@ -17,6 +17,8 @@ export interface InstallOptions {
     /** Absolute path to the xscs entrypoint, invoked with the bun runtime. */
     entry: string;
     runtime?: string;
+    /** Full self-invocation prefix. Standalone executables have no entry argument. */
+    command?: string[];
     /** Also register the MCP server so the agent can read and write memory on purpose. */
     withMcp?: boolean;
     dryRun?: boolean;
@@ -43,7 +45,7 @@ export interface InstallResult {
  * the transcript at distillation time.
  */
 export function hookMap(runtime: string, entry: string, agent: 'claude' | 'codex'): HookMap {
-    return (agent === 'claude' ? claudeHarness : codexHarness).buildHookMap(runtime, entry);
+    return (agent === 'claude' ? claudeHarness : codexHarness).buildHookMap([runtime, entry]);
 }
 
 export function installClaude(opts: InstallOptions): InstallResult {
@@ -76,8 +78,9 @@ function installHarness(adapter: HarnessAdapter, opts: InstallOptions): InstallR
     const dir = join(opts.target, adapter.configDirectory);
     const file = join(dir, adapter.configFile);
     const runtime = opts.runtime ?? process.execPath;
+    const command = opts.command ?? [runtime, opts.entry];
     const existing = readJson(file);
-    const next = adapter.applyConfiguration(existing, runtime, opts.entry, opts.withMcp ?? false);
+    const next = adapter.applyConfiguration(existing, command, opts.withMcp ?? false);
     return writeJson(file, dir, next, existing, opts.dryRun);
 }
 

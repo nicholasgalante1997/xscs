@@ -432,7 +432,7 @@ export function spawnBackground(argv: string[]): void {
     try {
         const processes = processPlatform();
         processes.spawnDetached({
-            command: [process.execPath, processes.mainEntry, ...argv],
+            command: processes.selfCommand(argv),
             env: { ...process.env, XSCS_BACKGROUND: '1' },
         });
     } catch (e) {

@@ -1,4 +1,4 @@
-import { mkdirSync,mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,7 @@ const ENTRY = '/opt/xscs/packages/cli/dist/xscs.js';
 
 interface SettingsFixture {
     hooks: Record<string, unknown>;
-    mcpServers: { xscs: { args: string[] } };
+    mcpServers: { xscs: { args: string[]; command: string } };
     model?: string;
     permissions?: { allow: string[] };
 }
@@ -99,6 +99,49 @@ describe('install', () => {
         expect(settings.model).toBe('opus');
         expect(settings.permissions.allow).toEqual(['Bash(ls:*)']);
         expect(settings.hooks.SessionStart).toBeDefined();
+    });
+
+    test('standalone configuration invokes the executable without a bunfs entry', () => {
+        const dir = tmp();
+        const executable = '/opt/xscs';
+        const claude = installClaude({
+            target: dir,
+            entry: '/$bunfs/root/index.js',
+            command: [executable],
+            withMcp: true,
+        });
+        const codex = installCodex({ target: dir, entry: '/$bunfs/root/index.js', command: [executable] });
+
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
+        expect(settings.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        expect(JSON.stringify(settings)).not.toContain('$bunfs');
+        expect(JSON.stringify(settings)).toContain(`${executable} hook`);
+        expect(readFileSync(codex.path, 'utf8')).not.toContain('$bunfs');
+    });
+
+    test('Windows standalone paths remain one quoted command and one MCP executable', () => {
+        const dir = tmp();
+        const executable = String.raw`C:\Program Files\xscs\xscs-windows-x64.exe`;
+        const claude = installClaude({
+            target: dir,
+            entry: String.raw`C:\$bunfs\root\index.js`,
+            command: [executable],
+            withMcp: true,
+        });
+        const codex = installCodex({
+            target: dir,
+            entry: String.raw`C:\$bunfs\root\index.js`,
+            command: [executable],
+        });
+
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
+        expect(settings.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        const command = (
+            settings.hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>
+        )[0]!.hooks[0]!.command;
+        expect(command).toStartWith(`"${executable}" hook`);
+        expect(command).not.toContain('$bunfs');
+        expect(readFileSync(codex.path, 'utf8')).toContain(`C:\\\\Program Files\\\\xscs`);
     });
 
     test('is idempotent', () => {

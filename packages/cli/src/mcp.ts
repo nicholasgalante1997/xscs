@@ -35,7 +35,7 @@ import { VERSION } from './version';
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';
-    id?: string | number | null;
+    id?: string | number;
     method: string;
     params?: Record<string, unknown>;
 }
@@ -285,8 +285,8 @@ function handleLine(line: string, ctx: Ctx): void {
         return;
     }
     const req = decoded;
-    // Notifications omit id entirely. An explicit null id is still answered so
-    // clients can correlate the response, though JSON-RPC discourages null ids.
+    // MCP notifications omit id entirely. Unlike base JSON-RPC, MCP forbids a
+    // null request id; the validator rejects it as an invalid request.
     const isNotification = !Object.hasOwn(req, 'id');
 
     try {
@@ -350,15 +350,17 @@ function respondError(id: string | number | null, code: number, message: string)
 
 function isRequest(value: unknown): value is JsonRpcRequest {
     if (!isRecord(value) || value.jsonrpc !== '2.0' || typeof value.method !== 'string') return false;
-    if (Object.hasOwn(value, 'id') && value.id !== null && typeof value.id !== 'string' && typeof value.id !== 'number') {
-        return false;
+    if (Object.hasOwn(value, 'id')) {
+        if (typeof value.id !== 'string' && typeof value.id !== 'number') return false;
+        if (typeof value.id === 'number' && !Number.isInteger(value.id)) return false;
     }
     return value.params === undefined || isRecord(value.params);
 }
 
 function requestId(value: unknown): string | number | null {
     if (!isRecord(value)) return null;
-    return typeof value.id === 'string' || typeof value.id === 'number' ? value.id : null;
+    if (typeof value.id === 'string') return value.id;
+    return typeof value.id === 'number' && Number.isInteger(value.id) ? value.id : null;
 }
 
 function validateToolArguments(schema: Record<string, unknown>, args: Record<string, unknown>): string | null {

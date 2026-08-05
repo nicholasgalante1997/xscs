@@ -35,15 +35,17 @@ export function cmdInit(input: InitInput): void {
     const context = makeCommandContext(input);
     const target = input.user ? homedir() : context.workspace.root;
     const entry = resolveEntry();
+    const processes = processPlatform();
+    const command = processes.mainEntry.includes('$bunfs') ? processes.selfCommand([]) : [process.execPath, entry];
     const both = !input.claude && !input.codex;
     const results: Array<{ harness: string; path: string; action: string; backup?: string }> = [];
 
     if (both || input.claude) {
-        const result = installClaude({ target, entry, withMcp: input.withMcp, dryRun: input.dryRun });
+        const result = installClaude({ target, entry, command, withMcp: input.withMcp, dryRun: input.dryRun });
         results.push({ harness: 'claude', ...result });
     }
     if (both || input.codex) {
-        const result = installCodex({ target, entry, dryRun: input.dryRun });
+        const result = installCodex({ target, entry, command, dryRun: input.dryRun });
         results.push({ harness: 'codex', ...result });
     }
 
@@ -58,17 +60,17 @@ export function cmdInit(input: InitInput): void {
             ...lines,
             '',
             `store:  ${storePath()}`,
-            `entry:  ${entry}`,
+            `entry:  ${command.join(' ')}`,
             '',
             !input.withMcp || !(both || input.claude)
                 ? ''
                 : 'Claude Code will expose the xscs MCP tools next session (context_search, context_remember, …).',
             'For Codex, register the MCP server with:',
-            `  codex mcp add xscs -- ${process.execPath} ${entry} mcp`,
+            `  codex mcp add xscs -- ${command.join(' ')} mcp`,
         ]
             .filter(Boolean)
             .join('\n'),
-        { workspace: context.workspace, entry, store: storePath(), results },
+        { workspace: context.workspace, entry: command.join(' '), store: storePath(), results },
     );
 }
 

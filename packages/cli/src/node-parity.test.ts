@@ -90,10 +90,17 @@ describe('Node 24 CLI parity', () => {
         });
         try {
             const reader = child.stdout.getReader();
-            const { value } = await reader.read();
+            const decoder = new TextDecoder();
+            let output = '';
+            let url: string | undefined;
+            const deadline = Date.now() + 2_000;
+            while (!url && Date.now() < deadline) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                output += decoder.decode(value, { stream: true });
+                url = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+            }
             reader.releaseLock();
-            const line = new TextDecoder().decode(value);
-            const url = line.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
             expect(url).toBeDefined();
             const response = await fetch(url!);
             expect(response.status).toBe(200);

@@ -10,8 +10,17 @@ interface RunResult {
     stdout: string;
 }
 
+interface Artifact {
+    command: string;
+    entry: string;
+    name: string;
+}
+
 const ROOT = resolve(import.meta.dir, '../../..');
-const ENTRY = resolve(ROOT, 'packages/cli/dist/xscs.js');
+const artifacts: Artifact[] = [
+    { name: 'Bun', command: process.execPath, entry: resolve(ROOT, 'packages/cli/dist/xscs.js') },
+    { name: 'Node', command: 'node', entry: resolve(ROOT, 'packages/cli/dist/xscs.node.js') },
+];
 const temporaryDirectories: string[] = [];
 
 function temporaryHome(): string {
@@ -20,14 +29,19 @@ function temporaryHome(): string {
     return path;
 }
 
-function run(args: string[], options: { cwd?: string; home?: string; stdin?: string } = {}): RunResult {
-    expect(existsSync(ENTRY)).toBe(true);
-    const result = Bun.spawnSync([process.execPath, ENTRY, ...args], {
+function run(
+    artifact: Artifact,
+    args: string[],
+    options: { cwd?: string; env?: Record<string, string>; home?: string; stdin?: string } = {},
+): RunResult {
+    expect(existsSync(artifact.entry)).toBe(true);
+    const result = Bun.spawnSync([artifact.command, artifact.entry, ...args], {
         cwd: options.cwd ?? ROOT,
         env: {
             ...process.env,
             XSCS_DISTILLER: 'none',
             XSCS_HOME: options.home ?? temporaryHome(),
+            ...options.env,
         },
         stdin: options.stdin === undefined ? undefined : new TextEncoder().encode(options.stdin),
         stdout: 'pipe',
@@ -52,9 +66,9 @@ afterEach(() => {
     }
 });
 
-describe('built CLI characterization', () => {
+for (const artifact of artifacts) describe(`${artifact.name} built CLI characterization`, () => {
     test('root help describes the complete command families', () => {
-        const result = run(['help']);
+        const result = run(artifact, ['help']);
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe('');
         for (const text of ['setup', 'reading', 'writing', 'maintenance', 'internal', 'global flags:', 'XSCS_HOME']) {
@@ -63,7 +77,7 @@ describe('built CLI characterization', () => {
     });
 
     test('unknown commands fail and keep diagnostics on stderr', () => {
-        const result = run(['definitely-not-a-command']);
+        const result = run(artifact, ['definitely-not-a-command']);
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('unknown command: definitely-not-a-command');
         expect(result.stdout).toContain('$ xscs <command> [options]');
@@ -71,7 +85,7 @@ describe('built CLI characterization', () => {
 
     test('empty-store JSON contracts remain stable', () => {
         const home = temporaryHome();
-        const stats = json(run(['stats', '--json'], { home })) as {
+        const stats = json(run(artifact, ['stats', '--json'], { home })) as {
             sessions: unknown[];
             stats: { active_items: number; events: number; items: number; sessions: number; workspaces: number };
         };
@@ -84,16 +98,17 @@ describe('built CLI characterization', () => {
         });
         expect(stats.sessions).toEqual([]);
 
-        expect(json(run(['list', '--json'], { home }))).toEqual([]);
-        expect(json(run(['open', '--json'], { home }))).toEqual([]);
-        expect(json(run(['search', 'memory', '--json'], { home }))).toEqual([]);
-        expect(json(run(['conflicts', '--json'], { home }))).toEqual([]);
+        expect(json(run(artifact, ['list', '--json'], { home }))).toEqual([]);
+        expect(json(run(artifact, ['open', '--json'], { home }))).toEqual([]);
+        expect(json(run(artifact, ['search', 'memory', '--json'], { home }))).toEqual([]);
+        expect(json(run(artifact, ['conflicts', '--json'], { home }))).toEqual([]);
     });
 
     test('remember and search preserve machine-readable result shapes', () => {
         const home = temporaryHome();
         const remembered = json(
             run(
+                artifact,
                 [
                     'remember',
                     '--type',
@@ -114,7 +129,7 @@ describe('built CLI characterization', () => {
         expect(remembered.item).toMatchObject({ pinned: true, type: 'constraint' });
         expect(remembered.item.id).toStartWith('itm_');
 
-        const hits = json(run(['search', 'bundled javascript', '--limit', '2', '--json'], { home })) as Array<{
+        const hits = json(run(artifact, ['search', 'bundled javascript', '--limit', '2', '--json'], { home })) as Array<{
             item: { id: string };
             relevance: number;
         }>;
@@ -127,26 +142,45 @@ describe('built CLI characterization', () => {
         const home = temporaryHome();
         json(
             run(
+                artifact,
                 ['remember', '--type', 'open_thread', '--title', 'Finish parity tests', '--body', 'Add Node fixtures.', '--json'],
                 { home },
             ),
         );
-        expect(json(run(['open', '--json'], { home }))).toEqual(json(run(['list', '--type', 'open_thread', '--json'], { home })));
+        expect(json(run(artifact, ['open', '--json'], { home }))).toEqual(
+            json(run(artifact, ['list', '--type', 'open_thread', '--json'], { home })),
+        );
     });
 
     test('missing remember title retains its usage failure', () => {
-        const result = run(['remember', '--type', 'fact']);
+        const result = run(artifact, ['remember', '--type', 'fact']);
         expect(result.exitCode).toBe(1);
         expect(result.stdout).toBe('');
         expect(result.stderr).toContain('usage: xscs remember --type <type> --title');
     });
+
+    test('--cwd and XSCS_DB preserve workspace and environment routing', () => {
+        const home = temporaryHome();
+        const cwd = temporaryHome();
+        const database = resolve(temporaryHome(), 'custom.db');
+        const workspaces = json(
+            run(artifact, ['workspaces', '--cwd', cwd, '--json'], {
+                home,
+                env: { XSCS_DB: database },
+            }),
+        ) as Array<{ root: string }>;
+        expect(workspaces.map((workspace) => workspace.root)).toEqual([cwd]);
+        expect(existsSync(database)).toBe(true);
+        expect(existsSync(resolve(home, 'store.db'))).toBe(false);
+    });
 });
 
-describe('built hook characterization', () => {
+for (const artifact of artifacts) describe(`${artifact.name} built hook characterization`, () => {
     test('internal hook invocations short-circuit safely', () => {
-        const result = Bun.spawnSync([process.execPath, ENTRY, 'hook', '--event', 'SessionStart', '--agent', 'codex'], {
+        const home = temporaryHome();
+        const result = Bun.spawnSync([artifact.command, artifact.entry, 'hook', '--event', 'SessionStart', '--agent', 'codex'], {
             cwd: ROOT,
-            env: { ...process.env, XSCS_INTERNAL: '1', XSCS_HOME: temporaryHome() },
+            env: { ...process.env, XSCS_INTERNAL: '1', XSCS_HOME: home },
             stdin: new TextEncoder().encode('not-json'),
             stdout: 'pipe',
             stderr: 'pipe',
@@ -154,16 +188,33 @@ describe('built hook characterization', () => {
         expect(result.exitCode).toBe(0);
         expect(result.stdout.toString()).toBe('{}');
         expect(result.stderr.toString()).toBe('');
+        expect(existsSync(resolve(home, 'store.db'))).toBe(false);
     });
 
     test('malformed hook JSON never fails the harness', () => {
         const home = temporaryHome();
-        const result = run(['hook', '--event', 'SessionStart', '--agent', 'codex'], {
+        const result = run(artifact, ['hook', '--event', 'SessionStart', '--agent', 'codex'], {
             home,
             stdin: '{broken',
         });
         expect(result).toEqual({ exitCode: 0, stdout: '{}', stderr: '' });
         expect(readFileSync(resolve(home, 'xscs.log'), 'utf8')).toContain('hook input was not JSON');
+    });
+
+    test('internal storage failures cannot break the harness', () => {
+        const home = temporaryHome();
+        const directoryInsteadOfDatabase = temporaryHome();
+        const result = run(artifact, ['hook', '--event', 'SessionStart', '--agent', 'codex'], {
+            home,
+            env: { XSCS_DB: directoryInsteadOfDatabase },
+            stdin: JSON.stringify({
+                cwd: ROOT,
+                hook_event_name: 'SessionStart',
+                session_id: 'forced-storage-failure',
+            }),
+        });
+        expect(result).toEqual({ exitCode: 0, stdout: '{}', stderr: '' });
+        expect(readFileSync(resolve(home, 'xscs.log'), 'utf8')).toContain('hook SessionStart failed');
     });
 
     for (const fixture of ['claude-session-start.json', 'codex-session-start.json']) {
@@ -172,6 +223,7 @@ describe('built hook characterization', () => {
             const raw = readFileSync(resolve(import.meta.dir, 'fixtures', fixture), 'utf8').replace('__WORKSPACE__', ROOT);
             const agent = fixture.startsWith('claude') ? 'claude' : 'codex';
             const result = run(
+                artifact,
                 ['hook', '--event', 'SessionStart', '--agent', agent, '--no-background'],
                 { home, stdin: raw },
             );

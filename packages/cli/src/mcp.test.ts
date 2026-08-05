@@ -11,16 +11,25 @@ interface RpcResponse {
     result?: Record<string, unknown>;
 }
 
+interface Artifact {
+    command: string;
+    entry: string;
+    name: string;
+}
+
 const ROOT = resolve(import.meta.dir, '../../..');
-const ENTRY = resolve(ROOT, 'packages/cli/dist/xscs.js');
+const artifacts: Artifact[] = [
+    { name: 'Bun', command: process.execPath, entry: resolve(ROOT, 'packages/cli/dist/xscs.js') },
+    { name: 'Node', command: 'node', entry: resolve(ROOT, 'packages/cli/dist/xscs.node.js') },
+];
 const temporaryDirectories: string[] = [];
 
-function runMcp(messages: unknown[], rawPrefix = ''): { responses: RpcResponse[]; stderr: string } {
-    expect(existsSync(ENTRY)).toBe(true);
+function runMcp(artifact: Artifact, messages: unknown[], rawPrefix = ''): { responses: RpcResponse[]; stderr: string } {
+    expect(existsSync(artifact.entry)).toBe(true);
     const home = mkdtempSync(resolve(tmpdir(), 'xscs-mcp-'));
     temporaryDirectories.push(home);
     const input = rawPrefix + messages.map((message) => JSON.stringify(message)).join('\n') + '\n';
-    const result = Bun.spawnSync([process.execPath, ENTRY, 'mcp'], {
+    const result = Bun.spawnSync([artifact.command, artifact.entry, 'mcp'], {
         cwd: ROOT,
         env: { ...process.env, XSCS_HOME: home },
         stdin: new TextEncoder().encode(input),
@@ -42,9 +51,20 @@ afterEach(() => {
     }
 });
 
-describe('MCP JSON-RPC conformance characterization', () => {
+for (const artifact of artifacts) describe(`${artifact.name} MCP JSON-RPC conformance characterization`, () => {
     test('initialize preserves protocol and server identity', () => {
-        const { responses, stderr } = runMcp([{ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }]);
+        const { responses, stderr } = runMcp(artifact, [
+            {
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'initialize',
+                params: {
+                    protocolVersion: '2025-06-18',
+                    capabilities: {},
+                    clientInfo: { name: 'xscs-conformance-test', version: '1.0.0' },
+                },
+            },
+        ]);
         expect(stderr).toBe('');
         expect(responses).toEqual([
             {
@@ -60,7 +80,7 @@ describe('MCP JSON-RPC conformance characterization', () => {
     });
 
     test('tools/list exposes the complete stable tool set', () => {
-        const { responses } = runMcp([{ jsonrpc: '2.0', id: 'tools', method: 'tools/list', params: {} }]);
+        const { responses } = runMcp(artifact, [{ jsonrpc: '2.0', id: 'tools', method: 'tools/list', params: {} }]);
         const tools = responses[0]!.result!.tools as Array<{ inputSchema: unknown; name: string }>;
         expect(tools.map((tool) => tool.name)).toEqual([
             'context_search',
@@ -75,8 +95,42 @@ describe('MCP JSON-RPC conformance characterization', () => {
         for (const tool of tools) expect(tool.inputSchema).toBeObject();
     });
 
+    test('tools/call executes valid writes and ordered reads', () => {
+        const { responses, stderr } = runMcp(artifact, [
+            {
+                jsonrpc: '2.0',
+                id: 'remember',
+                method: 'tools/call',
+                params: {
+                    name: 'context_remember',
+                    arguments: {
+                        type: 'fact',
+                        title: 'MCP conformance memory',
+                        body: 'A later request in this process must observe this write.',
+                    },
+                },
+            },
+            {
+                jsonrpc: '2.0',
+                id: 'search',
+                method: 'tools/call',
+                params: { name: 'context_search', arguments: { query: 'conformance memory' } },
+            },
+        ]);
+        expect(stderr).toBe('');
+        expect(responses.map((response) => response.id)).toEqual(['remember', 'search']);
+        expect(responses[0]?.error).toBeUndefined();
+        expect(responses[0]?.result?.content).toEqual([
+            { type: 'text', text: expect.stringMatching(/^Stored as itm_/) },
+        ]);
+        expect(responses[1]?.error).toBeUndefined();
+        expect(responses[1]?.result?.content).toEqual([
+            { type: 'text', text: expect.stringContaining('MCP conformance memory') },
+        ]);
+    });
+
     test('notifications produce no response and request ids are preserved', () => {
-        const { responses } = runMcp([
+        const { responses } = runMcp(artifact, [
             { jsonrpc: '2.0', method: 'notifications/initialized' },
             { jsonrpc: '2.0', id: 'string-id', method: 'ping' },
             { jsonrpc: '2.0', id: 42, method: 'unknown/method' },
@@ -91,7 +145,7 @@ describe('MCP JSON-RPC conformance characterization', () => {
     });
 
     test('malformed JSON emits a framed parse error and processing continues', () => {
-        const { responses, stderr } = runMcp([{ jsonrpc: '2.0', id: 2, method: 'ping' }], '{not-json}\n');
+        const { responses, stderr } = runMcp(artifact, [{ jsonrpc: '2.0', id: 2, method: 'ping' }], '{not-json}\n');
         expect(stderr).toBe('');
         expect(responses).toEqual([
             { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } },
@@ -100,20 +154,22 @@ describe('MCP JSON-RPC conformance characterization', () => {
     });
 
     test('invalid requests retain valid ids and use JSON-RPC errors', () => {
-        const { responses } = runMcp([
+        const { responses } = runMcp(artifact, [
             { jsonrpc: '1.0', id: 10, method: 'ping' },
             { jsonrpc: '2.0', id: 11 },
             { jsonrpc: '2.0', id: 12, method: 'ping', params: [] },
+            { jsonrpc: '2.0', id: 12.5, method: 'ping' },
         ]);
         expect(responses).toEqual([
             { jsonrpc: '2.0', id: 10, error: { code: -32600, message: 'Invalid Request' } },
             { jsonrpc: '2.0', id: 11, error: { code: -32600, message: 'Invalid Request' } },
             { jsonrpc: '2.0', id: 12, error: { code: -32600, message: 'Invalid Request' } },
+            { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request' } },
         ]);
     });
 
     test('malformed tool arguments return invalid params without invoking the tool', () => {
-        const { responses } = runMcp([
+        const { responses } = runMcp(artifact, [
             {
                 jsonrpc: '2.0',
                 id: 'bad-arguments',
@@ -130,16 +186,18 @@ describe('MCP JSON-RPC conformance characterization', () => {
         ]);
     });
 
-    test('an explicit null id receives a response while notifications do not', () => {
-        const { responses } = runMcp([
+    test('MCP rejects a null id while notifications remain silent', () => {
+        const { responses } = runMcp(artifact, [
             { jsonrpc: '2.0', id: null, method: 'ping' },
             { jsonrpc: '2.0', method: 'ping' },
         ]);
-        expect(responses).toEqual([{ jsonrpc: '2.0', id: null, result: {} }]);
+        expect(responses).toEqual([
+            { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request' } },
+        ]);
     });
 
     test('unknown tools return a tool error without a JSON-RPC transport error', () => {
-        const { responses } = runMcp([
+        const { responses } = runMcp(artifact, [
             {
                 jsonrpc: '2.0',
                 id: 7,
@@ -160,7 +218,7 @@ describe('MCP JSON-RPC conformance characterization', () => {
     });
 
     test('multiple requests are processed in order in one process', () => {
-        const { responses } = runMcp([
+        const { responses } = runMcp(artifact, [
             { jsonrpc: '2.0', id: 1, method: 'ping' },
             { jsonrpc: '2.0', id: 2, method: 'tools/list' },
             { jsonrpc: '2.0', id: 3, method: 'ping' },

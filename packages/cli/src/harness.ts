@@ -37,8 +37,8 @@ export interface HarnessAdapter {
     normalizeHookPayload(value: unknown): HookInput | null;
     recognizes(input: HookInput, env: HarnessEnvironment): boolean;
     parseTranscript(raw: string): ParsedTranscript;
-    buildHookMap(runtime: string, entry: string): HookMap;
-    applyConfiguration(existing: Record<string, unknown>, runtime: string, entry: string, withMcp: boolean): Record<string, unknown>;
+    buildHookMap(command: string[]): HookMap;
+    applyConfiguration(existing: Record<string, unknown>, command: string[], withMcp: boolean): Record<string, unknown>;
 }
 
 abstract class BaseHarnessAdapter implements HarnessAdapter {
@@ -58,9 +58,9 @@ abstract class BaseHarnessAdapter implements HarnessAdapter {
         return parseTranscriptText(raw, this.kind);
     }
 
-    buildHookMap(runtime: string, entry: string): HookMap {
+    buildHookMap(prefix: string[]): HookMap {
         const command = (event: string): string =>
-            `${quote(runtime)} ${quote(entry)} hook --agent ${this.kind} --event ${event}`;
+            [...prefix, 'hook', '--agent', this.kind, '--event', event].map(quote).join(' ');
         return {
             SessionStart: [
                 {
@@ -89,13 +89,12 @@ abstract class BaseHarnessAdapter implements HarnessAdapter {
 
     applyConfiguration(
         existing: Record<string, unknown>,
-        runtime: string,
-        entry: string,
+        command: string[],
         _withMcp: boolean,
     ): Record<string, unknown> {
         return {
             ...existing,
-            hooks: mergeHookMaps(asHookMap(existing.hooks), this.buildHookMap(runtime, entry)),
+            hooks: mergeHookMaps(asHookMap(existing.hooks), this.buildHookMap(command)),
         };
     }
 }
@@ -112,14 +111,13 @@ class ClaudeHarnessAdapter extends BaseHarnessAdapter {
 
     override applyConfiguration(
         existing: Record<string, unknown>,
-        runtime: string,
-        entry: string,
+        command: string[],
         withMcp: boolean,
     ): Record<string, unknown> {
-        const next = super.applyConfiguration(existing, runtime, entry, withMcp);
+        const next = super.applyConfiguration(existing, command, withMcp);
         if (!withMcp) return next;
         const servers = isRecord(next.mcpServers) ? { ...next.mcpServers } : {};
-        servers.xscs = { command: runtime, args: [entry, 'mcp'] };
+        servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
         return { ...next, mcpServers: servers };
     }
 }

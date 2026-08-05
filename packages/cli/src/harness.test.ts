@@ -43,7 +43,7 @@ describe('HarnessAdapter contracts', () => {
 
     test('encodes lifecycle availability and timeout policy', () => {
         for (const adapter of [claudeHarness, codexHarness]) {
-            const hooks = adapter.buildHookMap('/usr/bin/bun', '/opt/xscs.js');
+            const hooks = adapter.buildHookMap(['/usr/bin/bun', '/opt/xscs.js']);
             expect(Object.keys(hooks)).toEqual([
                 'SessionStart',
                 'UserPromptSubmit',
@@ -57,8 +57,8 @@ describe('HarnessAdapter contracts', () => {
     });
 
     test('Claude alone adds MCP configuration', () => {
-        const claude = claudeHarness.applyConfiguration({}, 'node', '/opt/xscs.js', true);
-        const codex = codexHarness.applyConfiguration({}, 'node', '/opt/xscs.js', true);
+        const claude = claudeHarness.applyConfiguration({}, ['node', '/opt/xscs.js'], true);
+        const codex = codexHarness.applyConfiguration({}, ['node', '/opt/xscs.js'], true);
         expect(claude.mcpServers).toEqual({ xscs: { command: 'node', args: ['/opt/xscs.js', 'mcp'] } });
         expect(codex.mcpServers).toBeUndefined();
     });
