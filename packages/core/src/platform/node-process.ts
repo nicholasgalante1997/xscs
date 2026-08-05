@@ -55,6 +55,9 @@ function which(command: string): string | null {
 
 export const nodeProcessPlatform: ProcessPlatform = {
     mainEntry: resolve(process.argv[1] ?? ''),
+    selfCommand(args) {
+        return [process.execPath, resolve(process.argv[1] ?? ''), ...args];
+    },
     async readStdin() {
         const chunks: Uint8Array[] = [];
         for await (const chunk of stdinChunks()) chunks.push(chunk);

@@ -42,13 +42,15 @@ describe('Bun and Node SQLite interoperability', () => {
 
         const script = `
             process.env.NODE_NO_WARNINGS = '1';
-            const [{ configureDatabasePlatform, openStore, listItems, putItem }, { createNodeDatabasePlatform, assertNodeSqliteCapabilities }] =
+            const [{ configureDatabasePlatform, openStore, listItems, putItem, searchItems }, { createNodeDatabasePlatform, assertNodeSqliteCapabilities }] =
                 await Promise.all([import('@xscs/core'), import('@xscs/core/node')]);
             const platform = await createNodeDatabasePlatform();
             assertNodeSqliteCapabilities(platform);
             configureDatabasePlatform(platform);
             const db = openStore({ path: process.argv[1], fresh: true });
             const before = listItems(db, { workspace_id: process.argv[2], status: 'active' });
+            const search = searchItems(db, 'same sqlite portable', { workspace_id: process.argv[2] });
+            const hostile = searchItems(db, 'foo:" OR -bar*', { workspace_id: process.argv[2] });
             putItem(db, {
                 type: 'fact',
                 title: 'Written by Node',
@@ -58,7 +60,15 @@ describe('Bun and Node SQLite interoperability', () => {
                 source: 'test:node'
             });
             db.close();
-            process.stdout.write(JSON.stringify(before.map((item) => item.id)));
+            const readonly = openStore({ path: process.argv[1], fresh: true, readonly: true });
+            const readBack = listItems(readonly, { workspace_id: process.argv[2], status: 'active' });
+            readonly.close();
+            process.stdout.write(JSON.stringify({
+                before: before.map((item) => item.id),
+                hostile: hostile.length,
+                readBack: readBack.map((item) => item.title).sort(),
+                search: search.length
+            }));
         `;
         const result = Bun.spawnSync(['node', '--input-type=module', '-e', script, path, workspace.id], {
             cwd: resolve(import.meta.dir, '../../../cli'),
@@ -67,7 +77,12 @@ describe('Bun and Node SQLite interoperability', () => {
         });
         expect(result.exitCode).toBe(0);
         expect(result.stderr.toString()).toBe('');
-        expect(JSON.parse(result.stdout.toString())).toEqual([first.item.id]);
+        expect(JSON.parse(result.stdout.toString())).toEqual({
+            before: [first.item.id],
+            hostile: 0,
+            readBack: ['Written by Bun', 'Written by Node'],
+            search: 1,
+        });
 
         const reopened = bunDatabasePlatform.open(path);
         const items = listItems(reopened, { workspace_id: workspace.id, status: 'active' });
@@ -100,6 +115,12 @@ describe('Bun and Node SQLite interoperability', () => {
             }
             const db = core.openStore({ path, fresh: true });
             for (let index = 0; index < 25; index++) {
+                const session = core.upsertSession(db, {
+                    agent: 'other',
+                    harness_session_id: 'concurrent-shared',
+                    workspace_id: workspace,
+                    cwd: process.cwd()
+                });
                 core.putItem(db, {
                     type: 'fact',
                     title: runtime + ' concurrent item ' + index,
@@ -107,6 +128,12 @@ describe('Bun and Node SQLite interoperability', () => {
                     scope: 'workspace',
                     workspace_id: workspace,
                     source: 'test:' + runtime
+                });
+                core.appendEvent(db, {
+                    session_id: session.id,
+                    workspace_id: workspace,
+                    kind: 'note',
+                    payload: { runtime, index }
                 });
             }
             db.close();
@@ -139,6 +166,12 @@ describe('Bun and Node SQLite interoperability', () => {
         const items = listItems(reopened, { workspace_id: workspace.id, status: 'active', limit: 100 });
         expect(items).toHaveLength(50);
         expect(new Set(items.map((item) => item.source))).toEqual(new Set(['test:bun', 'test:node']));
+        const counts = reopened
+            .query<{ events: number; sessions: number }, []>(
+                'SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM sessions) AS sessions',
+            )
+            .get();
+        expect(counts).toEqual({ events: 50, sessions: 1 });
         reopened.close();
     });
 });

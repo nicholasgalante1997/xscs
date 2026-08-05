@@ -18,6 +18,7 @@ export interface DetachedProcessInput {
 
 export interface ProcessPlatform {
     readonly mainEntry: string;
+    selfCommand(args: string[]): string[];
     readStdin(): Promise<string>;
     run(input: ProcessRunInput): Promise<ProcessRunResult>;
     spawnDetached(input: DetachedProcessInput): void;

@@ -35,6 +35,9 @@ async function* stdinChunks(): AsyncIterable<Uint8Array> {
 
 export const bunProcessPlatform: ProcessPlatform = {
     mainEntry: Bun.main,
+    selfCommand(args) {
+        return Bun.main.includes('$bunfs') ? [process.execPath, ...args] : [process.execPath, Bun.main, ...args];
+    },
     async readStdin() {
         return Bun.stdin.text();
     },

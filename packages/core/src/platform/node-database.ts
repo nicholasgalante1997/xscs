@@ -21,7 +21,7 @@ class NodeDatabaseConnection {
 
     constructor(DatabaseSync: NodeDatabaseConstructor, path: string, options: OpenDatabaseOptions = {}) {
         this.#database = new DatabaseSync(path, {
-            open: options.create ?? !options.readonly,
+            open: true,
             readOnly: options.readonly ?? false,
         });
     }
