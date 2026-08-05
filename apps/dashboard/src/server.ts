@@ -9,9 +9,10 @@ import { applyAction, loadState, resolveConflict, search } from './api';
 import { renderShell } from './shell';
 import type { ActionRequest } from './types';
 
+declare const XSCS_EMBEDDED_DASHBOARD_CLIENT: string | undefined;
+
 export interface ServeOptions {
     port?: number;
-    hostname?: string;
     open?: boolean;
     /** Working directory used to pick the default workspace. */
     cwd?: string;
@@ -35,7 +36,7 @@ export async function serveDashboard(opts: ServeOptions = {}): Promise<{ url: st
     const runtime = serverPlatform();
     const server = await runtime.serve({
         port: opts.port ?? 4319,
-        hostname: opts.hostname ?? '127.0.0.1',
+        hostname: '127.0.0.1',
         async fetch(req) {
             const url = new URL(req.url);
 
@@ -101,6 +102,8 @@ function json(body: unknown, status = 200): Response {
  * which also means the dev loop needs no watcher.
  */
 async function resolveClientBundle(buildClient?: (entry: string) => Promise<string>): Promise<string> {
+    if (typeof XSCS_EMBEDDED_DASHBOARD_CLIENT === 'string') return XSCS_EMBEDDED_DASHBOARD_CLIENT;
+
     const moduleDirectory = fileURLToPath(new URL('.', import.meta.url));
     const prebuilt = join(moduleDirectory, 'client', 'app.js');
     if (existsSync(prebuilt)) return readFile(prebuilt, 'utf8');
