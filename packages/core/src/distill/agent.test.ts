@@ -7,7 +7,12 @@ import {
 } from '../platform/process';
 import { distillWithAgent } from './agent';
 
-afterEach(() => configureProcessPlatform(bunProcessPlatform));
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+    configureProcessPlatform(bunProcessPlatform);
+    globalThis.fetch = originalFetch;
+});
 
 describe('agent distiller security boundary', () => {
     test('Claude cannot use filesystem, shell, network, or delegation tools', async () => {
@@ -51,6 +56,31 @@ describe('agent distiller security boundary', () => {
         expect(invocation?.command).toContain('read-only');
         expect(invocation?.env?.XSCS_INTERNAL).toBe('1');
         expect(result.drafts[0]).toMatchObject({ scope: 'workspace', status: 'proposed' });
+    });
+
+    test('Ollama uses the local structured-output API without agent tools', async () => {
+        let request: RequestInit | undefined;
+        globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+            request = init;
+            return new Response(
+                JSON.stringify({
+                    response: JSON.stringify({
+                        items: [{ type: 'fact', title: 'Local model', body: 'Ollama distilled this.', scope: 'global' }],
+                    }),
+                }),
+                { status: 200, headers: { 'content-type': 'application/json' } },
+            );
+        }) as typeof fetch;
+
+        const result = await distillWithAgent({
+            backend: 'ollama',
+            model: 'qwen3:8b',
+            material: 'untrusted transcript',
+            workspaceName: 'demo',
+        });
+        const body = JSON.parse(String(request?.body)) as { format: string; model: string; stream: boolean };
+        expect(body).toMatchObject({ format: 'json', model: 'qwen3:8b', stream: false });
+        expect(result.drafts[0]).toMatchObject({ scope: 'workspace', source: 'distiller:ollama', status: 'proposed' });
     });
 });
 
