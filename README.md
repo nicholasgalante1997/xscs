@@ -46,12 +46,13 @@ neither Node nor Bun and include the dashboard client.
 ```bash
 bun install
 bun run build          # hooks run the built bundle, never TypeScript source
-bun run xscs init      # wires .claude/settings.json and .codex/hooks.json
+bun run xscs init      # preserves the legacy Claude + Codex default
+bun run xscs init --kiro --with-mcp
 ```
 
 `init` merges into existing settings and backs up whatever was there. Add
 `--user` to wire your home directory instead of just this project, `--dry-run` to
-see what it would do, `--claude` / `--codex` to pick one harness.
+see what it would do, or use `--claude`, `--codex`, or `--kiro` to pick one harness.
 
 For Codex's MCP tools (Claude Code's are registered by `init`), use the same
 runtime that owns the installed command. From a source checkout:
@@ -181,7 +182,7 @@ runbook in [`docs/RELEASING.md`](./docs/RELEASING.md).
 | log | `~/.xscs/xscs.log` |
 | handoff | `<project>/.xscs/HANDOFF.md` — human-readable, committable |
 
-Environment: `XSCS_HOME`, `XSCS_DB`, `XSCS_DISTILLER=claude|codex|none`,
+Environment: `XSCS_HOME`, `XSCS_DB`, `XSCS_DISTILLER=claude|codex|ollama|none`,
 `XSCS_INTERNAL=1` (disables all hooks — set automatically inside distiller
 subprocesses).
 
@@ -206,5 +207,5 @@ subprocesses).
 xscs init --dry-run     # shows the files involved
 ```
 
-Remove the `xscs` entries from `.claude/settings.json` and `.codex/hooks.json`
+Remove the `xscs` entries from `.claude/settings.json`, `.codex/hooks.json`, and `.kiro/hooks/xscs.json`
 (originals are kept as `*.xscs-backup-*`), then delete `~/.xscs/`.

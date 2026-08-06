@@ -53,5 +53,5 @@ description = "Smoke-test one native standalone artifact"
 run = "bun scripts/smoke-standalone.ts"
 
 [tasks.verify]
-description = "Build, type-check, and test the workspace"
-depends = ["build", "typecheck", "test"]
+description = "Build, type-check, test, and lint the workspace without dist races"
+run = "turbo run build --force && turbo run check-types && turbo run test && bun run lint"

@@ -36,8 +36,10 @@ processes, never running at the same time except by accident.
 
 ### The five hook moments
 
-Installed by `xscs init` into `.claude/settings.json` and `.codex/hooks.json`.
-Identical event set for both harnesses.
+Installed by `xscs init` into `.claude/settings.json` and `.codex/hooks.json`, or
+explicitly for Kiro with `xscs init --kiro`. Kiro maps its available
+`AgentSpawn`, `UserPromptSubmit`, and `Stop` events into the shared lifecycle;
+it does not expose compaction or session-end hooks.
 
 | Event | Matcher | Timeout | What it does |
 |---|---|---|---|
@@ -118,6 +120,7 @@ but nothing stops your hooks from running a *stale* bundle indefinitely.
 xscs init                      # this project only
 xscs init --user               # your home dir — applies to every repo
 xscs init --claude             # one harness only
+xscs init --kiro --with-mcp    # Kiro CLI 3 hooks and MCP
 xscs init --dry-run            # show the diff without writing
 xscs init --no-mcp             # skip Claude Code MCP registration
 ```
@@ -138,7 +141,9 @@ codex mcp add xscs -- "$(which bun)" /abs/path/to/packages/cli/dist/xscs.js mcp
 |---|---|
 | `XSCS_HOME` | Directory for the store and log. Default `~/.xscs`. |
 | `XSCS_DB` | Full path to the database file. Overrides `XSCS_HOME` for the DB only. |
-| `XSCS_DISTILLER` | `claude` \| `codex` \| `none`. Forces the LLM backend; otherwise auto-detected from PATH. |
+| `XSCS_DISTILLER` | `claude` \| `codex` \| `ollama` \| `none`. Forces the LLM backend; otherwise auto-detected from PATH. |
+| `XSCS_OLLAMA_MODEL` | Ollama model used for distillation. Required unless `--model` is provided. |
+| `OLLAMA_HOST` | Ollama API host. Default `http://127.0.0.1:11434`. |
 | `XSCS_INTERNAL=1` | Makes every hook a no-op. Set automatically inside distiller subprocesses to prevent recursion. Set it manually to temporarily disable xscs for a shell. |
 
 ---
@@ -217,7 +222,7 @@ Global flags on every interactive command: `--json`, `--cwd <path>`.
 ### Setup
 
 ```bash
-xscs init [--user] [--claude] [--codex] [--no-mcp] [--dry-run]
+xscs init [--user] [--claude] [--codex] [--kiro] [--with-mcp|--no-mcp] [--dry-run]
 xscs doctor
 xscs mcp                                    # stdio server; not for interactive use
 ```
@@ -281,7 +286,7 @@ xscs review --accept itm_a,itm_b --reject itm_c
 
 ```bash
 xscs distill [--session <id>] [--pending] [--mode heuristic|agent|both]
-             [--backend claude|codex|none] [--limit n] [--dry-run]
+             [--backend claude|codex|ollama|none] [--limit n] [--dry-run]
              [--handoff] [--quiet]
 xscs conflicts [--dismiss <idA> --dismiss <idB>] [--limit n]
 xscs prune [--events-days n] [--briefs-days n]   # defaults 60 / 30
@@ -466,14 +471,14 @@ xscs distill --session ses_abc --dry-run  # inspect without writing
 
 - **heuristic** — regex, in-process, free, offline, deterministic. Runs
   automatically in the background at SessionStart and SessionEnd.
-- **agent** — shells out to `claude -p` or `codex exec`. Everything it produces
+- **agent** — uses `claude -p`, `codex exec`, or Ollama's local HTTP API. Everything it produces
   lands as `proposed`. Backend auto-detected; override with `--backend` or
   `XSCS_DISTILLER`.
 
 The LLM distiller runs with **all filesystem tools disabled** (`--disallowed-tools
 Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit` for Claude;
-`--sandbox read-only` for Codex). It reads transcripts, and transcripts are
-untrusted input.
+`--sandbox read-only` for Codex). Ollama receives only the distillation prompt
+and has no xscs-provided tools. All transcript and event material is untrusted input.
 
 ### The lease
 
