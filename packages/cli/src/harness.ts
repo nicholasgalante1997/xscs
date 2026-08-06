@@ -22,6 +22,8 @@ export type HookMap = Record<string, HookMatcher[]>;
 export interface HarnessEnvironment {
     CLAUDE_PROJECT_DIR?: string;
     CODEX_HOME?: string;
+    KIRO_HOME?: string;
+    USER_PROMPT?: string;
 }
 
 /**
@@ -30,24 +32,25 @@ export interface HarnessEnvironment {
  * identifies itself, or constrains hook execution.
  */
 export interface HarnessAdapter {
-    readonly kind: Extract<AgentKind, 'claude' | 'codex'>;
+    readonly kind: Extract<AgentKind, 'claude' | 'codex' | 'kiro'>;
     readonly label: string;
-    readonly configDirectory: '.claude' | '.codex';
+    readonly configDirectory: '.claude' | '.codex' | '.kiro';
     readonly configFile: string;
-    normalizeHookPayload(value: unknown): HookInput | null;
+    normalizeHookPayload(value: unknown, env?: HarnessEnvironment): HookInput | null;
     recognizes(input: HookInput, env: HarnessEnvironment): boolean;
     parseTranscript(raw: string): ParsedTranscript;
     buildHookMap(command: string[]): HookMap;
     applyConfiguration(existing: Record<string, unknown>, command: string[], withMcp: boolean): Record<string, unknown>;
+    renderHookOutput(output: Record<string, unknown>): string;
 }
 
 abstract class BaseHarnessAdapter implements HarnessAdapter {
-    abstract readonly kind: Extract<AgentKind, 'claude' | 'codex'>;
+    abstract readonly kind: Extract<AgentKind, 'claude' | 'codex' | 'kiro'>;
     abstract readonly label: string;
-    abstract readonly configDirectory: '.claude' | '.codex';
+    abstract readonly configDirectory: '.claude' | '.codex' | '.kiro';
     abstract readonly configFile: string;
 
-    normalizeHookPayload(value: unknown): HookInput | null {
+    normalizeHookPayload(value: unknown, _env?: HarnessEnvironment): HookInput | null {
         const parsed = HookInput.safeParse(value);
         return parsed.success ? parsed.data : null;
     }
@@ -56,6 +59,10 @@ abstract class BaseHarnessAdapter implements HarnessAdapter {
 
     parseTranscript(raw: string): ParsedTranscript {
         return parseTranscriptText(raw, this.kind);
+    }
+
+    renderHookOutput(output: Record<string, unknown>): string {
+        return JSON.stringify(output);
     }
 
     buildHookMap(prefix: string[]): HookMap {
@@ -109,17 +116,6 @@ class ClaudeHarnessAdapter extends BaseHarnessAdapter {
         return input.transcript_path?.includes('/.claude/') === true || Boolean(env.CLAUDE_PROJECT_DIR);
     }
 
-    override applyConfiguration(
-        existing: Record<string, unknown>,
-        command: string[],
-        withMcp: boolean,
-    ): Record<string, unknown> {
-        const next = super.applyConfiguration(existing, command, withMcp);
-        if (!withMcp) return next;
-        const servers = isRecord(next.mcpServers) ? { ...next.mcpServers } : {};
-        servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
-        return { ...next, mcpServers: servers };
-    }
 }
 
 class CodexHarnessAdapter extends BaseHarnessAdapter {
@@ -134,9 +130,63 @@ class CodexHarnessAdapter extends BaseHarnessAdapter {
     }
 }
 
+class KiroHarnessAdapter extends BaseHarnessAdapter {
+    readonly kind = 'kiro';
+    readonly label = 'Kiro CLI';
+    readonly configDirectory = '.kiro';
+    readonly configFile = 'hooks/xscs.json';
+
+    override normalizeHookPayload(value: unknown, env: HarnessEnvironment = {}): HookInput | null {
+        if (!isRecord(value)) return null;
+        const normalized = {
+            ...value,
+            prompt: typeof value.prompt === 'string' ? value.prompt : env.USER_PROMPT,
+            last_assistant_message:
+                typeof value.last_assistant_message === 'string'
+                    ? value.last_assistant_message
+                    : typeof value.assistant_response === 'string'
+                      ? value.assistant_response
+                      : undefined,
+        };
+        return super.normalizeHookPayload(normalized, env);
+    }
+
+    recognizes(input: HookInput, env: HarnessEnvironment): boolean {
+        return Boolean(env.KIRO_HOME) || ['agentSpawn', 'userPromptSubmit', 'stop'].includes(input.hook_event_name ?? '');
+    }
+
+    override applyConfiguration(
+        existing: Record<string, unknown>,
+        command: string[],
+        _withMcp: boolean,
+    ): Record<string, unknown> {
+        const hooks: Array<[string, string, string]> = [
+            ['xscs-session-start', 'SessionStart', 'AgentSpawn'],
+            ['xscs-user-prompt', 'UserPromptSubmit', 'UserPromptSubmit'],
+            ['xscs-stop', 'Stop', 'Stop'],
+        ];
+        const definitions = hooks.map(([name, event, trigger]) => ({
+            name,
+            trigger,
+            action: { type: 'command', command: [...command, 'hook', '--agent', 'kiro', '--event', event].map(quote).join(' ') },
+            timeout: event === 'Stop' ? 10 : 20,
+        }));
+        const foreign = Array.isArray(existing.hooks)
+            ? existing.hooks.filter((hook) => !isRecord(hook) || !String(hook.name ?? '').startsWith('xscs-'))
+            : [];
+        return { ...existing, version: 'v1', hooks: [...foreign, ...definitions] };
+    }
+
+    override renderHookOutput(output: Record<string, unknown>): string {
+        const specific = isRecord(output.hookSpecificOutput) ? output.hookSpecificOutput : null;
+        return typeof specific?.additionalContext === 'string' ? specific.additionalContext : '';
+    }
+}
+
 export const claudeHarness: HarnessAdapter = new ClaudeHarnessAdapter();
 export const codexHarness: HarnessAdapter = new CodexHarnessAdapter();
-export const harnesses: readonly HarnessAdapter[] = [claudeHarness, codexHarness];
+export const kiroHarness: HarnessAdapter = new KiroHarnessAdapter();
+export const harnesses: readonly HarnessAdapter[] = [claudeHarness, codexHarness, kiroHarness];
 
 export function harnessFor(kind: AgentKind): HarnessAdapter | null {
     return harnesses.find((adapter) => adapter.kind === kind) ?? null;
@@ -147,6 +197,8 @@ export function recognizeHarness(
     env: HarnessEnvironment = {
         CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR,
         CODEX_HOME: process.env.CODEX_HOME,
+        KIRO_HOME: process.env.KIRO_HOME,
+        USER_PROMPT: process.env.USER_PROMPT,
     },
 ): HarnessAdapter | null {
     return harnesses.find((adapter) => adapter.recognizes(input, env)) ?? null;

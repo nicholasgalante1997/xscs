@@ -1,7 +1,7 @@
 {
   "name": "cross-session-summary",
   "version": "0.2.0-alpha.0",
-  "description": "xscs — cross-session context store for Claude Code and Codex",
+  "description": "Local cross-session context for Claude Code, Codex, and Kiro CLI",
   "type": "module",
   "bin": {
     "xscs": "./dist/xscs.node.js",

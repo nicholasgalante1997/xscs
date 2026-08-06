@@ -5,15 +5,18 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import { resolveAgent } from './hook';
-import { hookMap, installClaude, installCodex, mergeHooks } from './install';
+import { hookMap, installClaude, installCodex, installKiro, mergeHooks } from './install';
 
 const ENTRY = '/opt/xscs/packages/cli/dist/xscs.js';
 
 interface SettingsFixture {
     hooks: Record<string, unknown>;
-    mcpServers: { xscs: { args: string[]; command: string } };
     model?: string;
     permissions?: { allow: string[] };
+}
+
+interface McpFixture {
+    mcpServers: { xscs: { args: string[]; command: string } };
 }
 
 function tmp(): string {
@@ -77,7 +80,8 @@ describe('install', () => {
 
         const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
         expect(settings.hooks.SessionStart).toBeDefined();
-        expect(settings.mcpServers.xscs.args).toEqual([ENTRY, 'mcp']);
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs.args).toEqual([ENTRY, 'mcp']);
 
         const hooks = JSON.parse(readFileSync(codex.path, 'utf8')) as SettingsFixture;
         expect(hooks.hooks.SessionEnd).toBeDefined();
@@ -113,7 +117,8 @@ describe('install', () => {
         const codex = installCodex({ target: dir, entry: '/$bunfs/root/index.js', command: [executable] });
 
         const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
-        expect(settings.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
         expect(JSON.stringify(settings)).not.toContain('$bunfs');
         expect(JSON.stringify(settings)).toContain(`${executable} hook`);
         expect(readFileSync(codex.path, 'utf8')).not.toContain('$bunfs');
@@ -135,7 +140,8 @@ describe('install', () => {
         });
 
         const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
-        expect(settings.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
         const command = (
             settings.hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>
         )[0]!.hooks[0]!.command;
@@ -148,6 +154,29 @@ describe('install', () => {
         const dir = tmp();
         installClaude({ target: dir, entry: ENTRY, runtime: 'bun' });
         expect(installClaude({ target: dir, entry: ENTRY, runtime: 'bun' }).action).toBe('unchanged');
+    });
+
+    test('user-scoped Claude MCP preserves the user registry', () => {
+        const dir = tmp();
+        writeFileSync(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { foreign: { command: 'foreign' } } }));
+        installClaude({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true, userScope: true });
+
+        const registry = JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf8')) as McpFixture & {
+            mcpServers: Record<string, unknown>;
+        };
+        expect(registry.mcpServers.foreign).toEqual({ command: 'foreign' });
+        expect(registry.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+    });
+
+    test('installs Kiro CLI 3 hooks and MCP configuration', () => {
+        const dir = tmp();
+        const result = installKiro({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true });
+        expect(result.path).toBe(join(dir, '.kiro', 'hooks', 'xscs.json'));
+        const hooks = JSON.parse(readFileSync(result.path, 'utf8')) as { version: string; hooks: unknown[] };
+        expect(hooks.version).toBe('v1');
+        expect(hooks.hooks).toHaveLength(3);
+        const mcp = JSON.parse(readFileSync(join(dir, '.kiro', 'settings', 'mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
     });
 
     test('refuses to rewrite a settings file it cannot parse', () => {

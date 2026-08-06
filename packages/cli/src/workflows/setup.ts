@@ -11,7 +11,7 @@ import {
 } from '@xscs/core';
 
 import { ConfigurationError } from '../errors';
-import { installClaude, installCodex } from '../install';
+import { installClaude, installCodex, installKiro } from '../install';
 import { makeCommandContext, writeCommandOutput } from './context';
 import type {
     AllInput,
@@ -37,16 +37,27 @@ export function cmdInit(input: InitInput): void {
     const entry = resolveEntry();
     const processes = processPlatform();
     const command = processes.mainEntry.includes('$bunfs') ? processes.selfCommand([]) : [process.execPath, entry];
-    const both = !input.claude && !input.codex;
+    const both = !input.claude && !input.codex && !input.kiro;
     const results: Array<{ harness: string; path: string; action: string; backup?: string }> = [];
 
     if (both || input.claude) {
-        const result = installClaude({ target, entry, command, withMcp: input.withMcp, dryRun: input.dryRun });
+        const result = installClaude({
+            target,
+            entry,
+            command,
+            withMcp: input.withMcp,
+            userScope: input.user,
+            dryRun: input.dryRun,
+        });
         results.push({ harness: 'claude', ...result });
     }
     if (both || input.codex) {
         const result = installCodex({ target, entry, command, dryRun: input.dryRun });
         results.push({ harness: 'codex', ...result });
+    }
+    if (input.kiro) {
+        const result = installKiro({ target, entry, command, withMcp: input.withMcp, dryRun: input.dryRun });
+        results.push({ harness: 'kiro', ...result });
     }
 
     const lines = results.map(
@@ -65,8 +76,12 @@ export function cmdInit(input: InitInput): void {
             !input.withMcp || !(both || input.claude)
                 ? ''
                 : 'Claude Code will expose the xscs MCP tools next session (context_search, context_remember, …).',
+            !(both || input.codex)
+                ? ''
+                : 'Codex security: start a fresh interactive session and approve the xscs project hooks when prompted. New or changed hooks do not run until approved.',
             'For Codex, register the MCP server with:',
             `  codex mcp add xscs -- ${command.join(' ')} mcp`,
+            !input.kiro ? '' : 'Kiro will load xscs hooks and MCP tools at its next idle boundary.',
         ]
             .filter(Boolean)
             .join('\n'),
@@ -113,20 +128,40 @@ export function cmdDoctor(input: ContextInput): void {
         ['claude user hooks', `${homedir()}/.claude/settings.json`],
         ['codex project hooks', `${context.workspace.root}/.codex/hooks.json`],
         ['codex user hooks', `${homedir()}/.codex/hooks.json`],
+        ['kiro project hooks', `${context.workspace.root}/.kiro/hooks/xscs.json`],
+        ['kiro user hooks', `${homedir()}/.kiro/hooks/xscs.json`],
     ] as const) {
         const present = existsSync(path);
         const wired = present && statSync(path).size > 0 ? hasXscsHook(path) : false;
         checks.push({
             name: harness,
             ok: wired,
-            detail: present ? (wired ? `wired: ${path}` : `present but not wired: ${path}`) : 'absent',
+            detail: present
+                ? wired
+                    ? `${harness.startsWith('codex') ? 'configured (approve new or changed hooks in a fresh Codex session)' : 'wired'}: ${path}`
+                    : `present but not wired: ${path}`
+                : 'absent',
         });
+    }
+
+    for (const [name, path] of [
+        ['claude project MCP', `${context.workspace.root}/.mcp.json`],
+        ['claude user MCP', `${homedir()}/.claude.json`],
+        ['codex user MCP', `${homedir()}/.codex/config.toml`],
+        ['kiro project MCP', `${context.workspace.root}/.kiro/settings/mcp.json`],
+        ['kiro user MCP', `${homedir()}/.kiro/settings/mcp.json`],
+    ] as const) {
+        const present = existsSync(path);
+        const wired = present && hasXscsMcp(path);
+        checks.push({ name, ok: wired, detail: wired ? `wired: ${path}` : present ? `present but xscs is absent: ${path}` : 'absent' });
     }
 
     const claude = processPlatform().which('claude');
     const codex = processPlatform().which('codex');
+    const kiro = processPlatform().which('kiro-cli');
     checks.push({ name: 'claude cli', ok: claude !== null, detail: claude ?? 'not on PATH' });
     checks.push({ name: 'codex cli', ok: codex !== null, detail: codex ?? 'not on PATH' });
+    checks.push({ name: 'kiro cli', ok: kiro !== null, detail: kiro ?? 'not on PATH' });
 
     const report = stats(context.db, context.workspace.id);
     checks.push({
@@ -161,6 +196,15 @@ function hasXscsHook(path: string): boolean {
     try {
         const text = readFileSync(path, 'utf8');
         return text.includes('xscs') && text.includes('hook');
+    } catch {
+        return false;
+    }
+}
+
+function hasXscsMcp(path: string): boolean {
+    try {
+        const text = readFileSync(path, 'utf8');
+        return text.includes('xscs') && text.includes('mcp');
     } catch {
         return false;
     }

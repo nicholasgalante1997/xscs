@@ -19,7 +19,7 @@ global flags:
   --json  --cwd <path>
 
 Environment:
-  XSCS_HOME  XSCS_DB  XSCS_DISTILLER=claude|codex|none`;
+  XSCS_HOME  XSCS_DB  XSCS_DISTILLER=claude|codex|ollama|none`;
 
 export async function runInteractiveCli(argv: string[]): Promise<void> {
     const cli = cac('xscs');

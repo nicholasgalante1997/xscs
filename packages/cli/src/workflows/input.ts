@@ -14,6 +14,7 @@ export interface InitInput extends ContextInput {
     user: boolean;
     claude: boolean;
     codex: boolean;
+    kiro: boolean;
     withMcp: boolean;
     dryRun: boolean;
 }

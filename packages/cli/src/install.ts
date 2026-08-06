@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { ConfigurationError } from './errors';
 import {
@@ -8,11 +8,12 @@ import {
     codexHarness,
     type HarnessAdapter,
     type HookMap,
+    kiroHarness,
     mergeHookMaps,
 } from './harness';
 
 export interface InstallOptions {
-    /** Directory whose `.claude` / `.codex` folder we write into. */
+    /** Directory whose harness configuration folder we write into. */
     target: string;
     /** Absolute path to the xscs entrypoint, invoked with the bun runtime. */
     entry: string;
@@ -21,6 +22,8 @@ export interface InstallOptions {
     command?: string[];
     /** Also register the MCP server so the agent can read and write memory on purpose. */
     withMcp?: boolean;
+    /** Use the harness's user-wide MCP registry rather than the project registry. */
+    userScope?: boolean;
     dryRun?: boolean;
 }
 
@@ -49,7 +52,10 @@ export function hookMap(runtime: string, entry: string, agent: 'claude' | 'codex
 }
 
 export function installClaude(opts: InstallOptions): InstallResult {
-    return installHarness(claudeHarness, opts);
+    if (opts.withMcp) readJson(claudeMcpPath(opts));
+    const result = installHarness(claudeHarness, opts);
+    if (opts.withMcp) installClaudeMcp(opts);
+    return result;
 }
 
 /**
@@ -59,6 +65,13 @@ export function installClaude(opts: InstallOptions): InstallResult {
  */
 export function installCodex(opts: InstallOptions): InstallResult {
     return installHarness(codexHarness, opts);
+}
+
+export function installKiro(opts: InstallOptions): InstallResult {
+    if (opts.withMcp) readJson(kiroMcpPath(opts));
+    const result = installHarness(kiroHarness, opts);
+    if (opts.withMcp) installKiroMcp(opts);
+    return result;
 }
 
 export function userClaudeDir(): string {
@@ -75,13 +88,42 @@ export function mergeHooks(existing: HookMap, ours: HookMap): HookMap {
 }
 
 function installHarness(adapter: HarnessAdapter, opts: InstallOptions): InstallResult {
-    const dir = join(opts.target, adapter.configDirectory);
-    const file = join(dir, adapter.configFile);
+    const file = join(opts.target, adapter.configDirectory, adapter.configFile);
+    const dir = dirname(file);
     const runtime = opts.runtime ?? process.execPath;
     const command = opts.command ?? [runtime, opts.entry];
     const existing = readJson(file);
     const next = adapter.applyConfiguration(existing, command, opts.withMcp ?? false);
     return writeJson(file, dir, next, existing, opts.dryRun);
+}
+
+function installClaudeMcp(opts: InstallOptions): InstallResult {
+    const file = claudeMcpPath(opts);
+    const dir = opts.userScope ? opts.target : join(opts.target);
+    const existing = readJson(file);
+    const servers = isRecord(existing.mcpServers) ? { ...existing.mcpServers } : {};
+    const runtime = opts.runtime ?? process.execPath;
+    const command = opts.command ?? [runtime, opts.entry];
+    servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
+    return writeJson(file, dir, { ...existing, mcpServers: servers }, existing, opts.dryRun);
+}
+
+function claudeMcpPath(opts: InstallOptions): string {
+    return opts.userScope ? join(opts.target, '.claude.json') : join(opts.target, '.mcp.json');
+}
+
+function installKiroMcp(opts: InstallOptions): InstallResult {
+    const file = kiroMcpPath(opts);
+    const dir = dirname(file);
+    const existing = readJson(file);
+    const servers = isRecord(existing.mcpServers) ? { ...existing.mcpServers } : {};
+    const command = opts.command ?? [opts.runtime ?? process.execPath, opts.entry];
+    servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
+    return writeJson(file, dir, { ...existing, mcpServers: servers }, existing, opts.dryRun);
+}
+
+function kiroMcpPath(opts: InstallOptions): string {
+    return join(opts.target, '.kiro', 'settings', 'mcp.json');
 }
 
 function readJson(file: string): Record<string, unknown> {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { claudeHarness, codexHarness, recognizeHarness } from './harness';
+import { claudeHarness, codexHarness, kiroHarness, recognizeHarness } from './harness';
 
 describe('HarnessAdapter contracts', () => {
     test('recognizes real-shaped hook payloads without global branching', () => {
@@ -17,6 +17,30 @@ describe('HarnessAdapter contracts', () => {
 
         expect(claude && recognizeHarness(claude, {})).toBe(claudeHarness);
         expect(codex && recognizeHarness(codex, {})).toBe(codexHarness);
+    });
+
+    test('normalizes Kiro lifecycle fields and emits plain context', () => {
+        const input = kiroHarness.normalizeHookPayload(
+            { hook_event_name: 'stop', session_id: 'kiro-session', assistant_response: 'Finished the adapter.' },
+            { USER_PROMPT: 'Add Kiro support.' },
+        );
+        expect(input).toMatchObject({ prompt: 'Add Kiro support.', last_assistant_message: 'Finished the adapter.' });
+        expect(input && recognizeHarness(input, {})).toBe(kiroHarness);
+        expect(
+            kiroHarness.renderHookOutput({
+                hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'remember this' },
+            }),
+        ).toBe('remember this');
+    });
+
+    test('builds Kiro CLI 3 hook configuration', () => {
+        const configuration = kiroHarness.applyConfiguration({}, ['xscs'], true) as {
+            version: string;
+            hooks: Array<{ trigger: string; action: { command: string } }>;
+        };
+        expect(configuration.version).toBe('v1');
+        expect(configuration.hooks.map((hook) => hook.trigger)).toEqual(['AgentSpawn', 'UserPromptSubmit', 'Stop']);
+        expect(configuration.hooks[0]!.action.command).toContain('--agent kiro --event SessionStart');
     });
 
     test('owns transcript attribution and parsing', () => {
@@ -59,7 +83,7 @@ describe('HarnessAdapter contracts', () => {
     test('Claude alone adds MCP configuration', () => {
         const claude = claudeHarness.applyConfiguration({}, ['node', '/opt/xscs.js'], true);
         const codex = codexHarness.applyConfiguration({}, ['node', '/opt/xscs.js'], true);
-        expect(claude.mcpServers).toEqual({ xscs: { command: 'node', args: ['/opt/xscs.js', 'mcp'] } });
+        expect(claude.mcpServers).toBeUndefined();
         expect(codex.mcpServers).toBeUndefined();
     });
 });

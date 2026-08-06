@@ -16,7 +16,7 @@ export function registerMaintenanceCommands(cli: ReturnType<typeof cac>): void {
         .option('--session <id>', 'Distill one session')
         .option('--pending', 'Distill pending sessions')
         .option('--mode <mode>', 'heuristic, agent, or both')
-        .option('--backend <backend>', 'claude, codex, or none')
+        .option('--backend <backend>', 'claude, codex, ollama, or none')
         .option('--limit <count>', 'Maximum sessions')
         .option('--dry-run', 'Return drafts without writing')
         .option('--handoff', 'Regenerate the workspace handoff')

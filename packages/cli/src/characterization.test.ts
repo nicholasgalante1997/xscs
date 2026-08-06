@@ -173,9 +173,41 @@ for (const artifact of artifacts) describe(`${artifact.name} built CLI character
         expect(existsSync(database)).toBe(true);
         expect(existsSync(resolve(home, 'store.db'))).toBe(false);
     });
+
+    test('init accepts the explicit --with-mcp compatibility flag', () => {
+        const home = temporaryHome();
+        const result = run(artifact, ['init', '--claude', '--with-mcp', '--dry-run', '--json'], {
+            cwd: home,
+            home,
+        });
+        const output = json(result) as { results: Array<{ harness: string; path: string; action: string }> };
+        expect(output.results).toHaveLength(1);
+        expect(output.results[0]).toMatchObject({ harness: 'claude', action: 'created' });
+        expect(output.results[0]!.path).toEndWith('/.claude/settings.json');
+        expect(existsSync(resolve(home, '.mcp.json'))).toBe(false);
+    });
 });
 
 for (const artifact of artifacts) describe(`${artifact.name} built hook characterization`, () => {
+    test('Kiro AgentSpawn emits plain model context rather than a Claude JSON envelope', () => {
+        const home = temporaryHome();
+        json(
+            run(
+                artifact,
+                ['remember', '--type', 'constraint', '--title', 'Kiro recall fixture', '--body', 'Preserve Kiro context.', '--json'],
+                { home },
+            ),
+        );
+        const result = run(artifact, ['hook', '--event', 'SessionStart', '--agent', 'kiro', '--no-background'], {
+            home,
+            stdin: JSON.stringify({ hook_event_name: 'agentSpawn', session_id: 'kiro-fixture', cwd: ROOT }),
+        });
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).toContain('Kiro recall fixture');
+        expect(result.stdout).not.toStartWith('{');
+    });
+
     test('internal hook invocations short-circuit safely', () => {
         const home = temporaryHome();
         const result = Bun.spawnSync([artifact.command, artifact.entry, 'hook', '--event', 'SessionStart', '--agent', 'codex'], {

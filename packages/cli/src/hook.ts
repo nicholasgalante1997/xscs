@@ -61,7 +61,7 @@ export async function runHook(args: HookArgs): Promise<void> {
     // A distiller subprocess is itself an agent session. Without this guard the
     // store would recursively record its own attempts to summarise the store.
     if (process.env.XSCS_INTERNAL === '1') {
-        process.stdout.write('{}');
+        writeHookOutput(args, {});
         return;
     }
 
@@ -77,10 +77,15 @@ export async function runHook(args: HookArgs): Promise<void> {
         const decoded: unknown = JSON.parse(raw || '{}');
         const adapter = args.agent ? harnessFor(args.agent) : null;
         if (adapter) {
-            const normalized = adapter.normalizeHookPayload(decoded);
+            const normalized = adapter.normalizeHookPayload(decoded, {
+                CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR,
+                CODEX_HOME: process.env.CODEX_HOME,
+                KIRO_HOME: process.env.KIRO_HOME,
+                USER_PROMPT: process.env.USER_PROMPT,
+            });
             if (!normalized) {
                 logError('hook input did not match contract');
-                process.stdout.write('{}');
+                writeHookOutput(args, {});
                 return;
             }
             input = normalized;
@@ -88,14 +93,14 @@ export async function runHook(args: HookArgs): Promise<void> {
             const parsed = HookInput.safeParse(decoded);
             if (!parsed.success) {
                 logError('hook input did not match contract', parsed.error.message);
-                process.stdout.write('{}');
+                writeHookOutput(args, {});
                 return;
             }
             input = parsed.data;
         }
     } catch (e) {
         logError('hook input was not JSON', e);
-        process.stdout.write('{}');
+        writeHookOutput(args, {});
         return;
     }
 
@@ -103,12 +108,17 @@ export async function runHook(args: HookArgs): Promise<void> {
 
     try {
         const output = await handle(event, input, args);
-        process.stdout.write(JSON.stringify(output ?? {}));
+        writeHookOutput(args, (output ?? {}) as Record<string, unknown>);
     } catch (e) {
         // Swallow and log. A hook that throws is a hook the user disables.
         logError(`hook ${event} failed`, e);
-        process.stdout.write('{}');
+        writeHookOutput(args, {});
     }
+}
+
+function writeHookOutput(args: HookArgs, output: Record<string, unknown>): void {
+    const adapter = args.agent ? harnessFor(args.agent) : null;
+    process.stdout.write(adapter ? adapter.renderHookOutput(output) : JSON.stringify(output));
 }
 
 async function handle(event: string, input: HookInput, args: HookArgs): Promise<HookOutput> {

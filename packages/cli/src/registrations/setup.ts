@@ -12,6 +12,8 @@ export function registerSetupCommands(cli: ReturnType<typeof cac>): void {
         .option('--user', 'Install user-level hooks')
         .option('--claude', 'Install Claude Code hooks only')
         .option('--codex', 'Install Codex hooks only')
+        .option('--kiro', 'Install Kiro CLI hooks only')
+        .option('--with-mcp', 'Register Claude Code MCP tools (default)')
         .option('--no-mcp', 'Do not register Claude Code MCP tools')
         .option('--dry-run', 'Show changes without writing')
         .action((options: CliOptions) =>
@@ -20,7 +22,8 @@ export function registerSetupCommands(cli: ReturnType<typeof cac>): void {
                 user: booleanOption(options.user),
                 claude: booleanOption(options.claude),
                 codex: booleanOption(options.codex),
-                withMcp: options.mcp !== false,
+                kiro: booleanOption(options.kiro),
+                withMcp: options.withMcp === true || options.mcp !== false,
                 dryRun: booleanOption(options.dryRun),
             }),
         );

@@ -40,7 +40,7 @@ function readHookOptions(argv: string[]): HookBootstrapOptions {
         const next = inlineValue ?? argv[index + 1];
         switch (name) {
             case 'agent':
-                if (next === 'claude' || next === 'codex' || next === 'other') options.agent = next;
+                if (next === 'claude' || next === 'codex' || next === 'kiro' || next === 'other') options.agent = next;
                 if (inlineValue === undefined) index++;
                 break;
             case 'event':
