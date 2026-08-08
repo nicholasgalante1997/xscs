@@ -33,13 +33,22 @@ describe('HarnessAdapter contracts', () => {
         ).toBe('remember this');
     });
 
+    test('uses Kiro 2.x session identity from the hook environment', () => {
+        const input = kiroHarness.normalizeHookPayload(
+            { hook_event_name: 'agentSpawn', cwd: '/workspace' },
+            { KIRO_SESSION_ID: 'kiro-env-session' },
+        );
+        expect(input?.session_id).toBe('kiro-env-session');
+        expect(input && recognizeHarness(input, { KIRO_SESSION_ID: 'kiro-env-session' })).toBe(kiroHarness);
+    });
+
     test('builds Kiro CLI 3 hook configuration', () => {
         const configuration = kiroHarness.applyConfiguration({}, ['xscs'], true) as {
             version: string;
             hooks: Array<{ trigger: string; action: { command: string } }>;
         };
         expect(configuration.version).toBe('v1');
-        expect(configuration.hooks.map((hook) => hook.trigger)).toEqual(['AgentSpawn', 'UserPromptSubmit', 'Stop']);
+        expect(configuration.hooks.map((hook) => hook.trigger)).toEqual(['SessionStart', 'UserPromptSubmit', 'Stop']);
         expect(configuration.hooks[0]!.action.command).toContain('--agent kiro --event SessionStart');
     });
 

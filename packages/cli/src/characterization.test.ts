@@ -186,6 +186,31 @@ for (const artifact of artifacts) describe(`${artifact.name} built CLI character
         expect(output.results[0]!.path).toEndWith('/.claude/settings.json');
         expect(existsSync(resolve(home, '.mcp.json'))).toBe(false);
     });
+
+    test('pending distillation preserves an explicit backend selection', () => {
+        const home = temporaryHome();
+        const sessionId = `pending-backend-${artifact.name.toLowerCase()}`;
+        const hook = (event: string, payload: Record<string, unknown>) =>
+            run(artifact, ['hook', '--event', event, '--agent', 'claude', '--no-background'], {
+                home,
+                stdin: JSON.stringify({ hook_event_name: event, session_id: sessionId, cwd: ROOT, ...payload }),
+            });
+        expect(hook('SessionStart', { source: 'startup' }).exitCode).toBe(0);
+        expect(
+            hook('UserPromptSubmit', {
+                prompt: 'Always run the complete verification suite before publishing an npm package to the registry.',
+            }).exitCode,
+        ).toBe(0);
+        expect(hook('SessionEnd', { reason: 'test' }).exitCode).toBe(0);
+
+        const reports = json(
+            run(artifact, ['distill', '--pending', '--mode', 'agent', '--backend', 'none', '--dry-run', '--json'], {
+                home,
+            }),
+        ) as Array<{ backend: string; error: string }>;
+        expect(reports).toHaveLength(1);
+        expect(reports[0]).toMatchObject({ backend: 'none', error: 'no distiller backend available' });
+    });
 });
 
 for (const artifact of artifacts) describe(`${artifact.name} built hook characterization`, () => {

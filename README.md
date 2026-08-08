@@ -53,6 +53,8 @@ bun run xscs init --kiro --with-mcp
 `init` merges into existing settings and backs up whatever was there. Add
 `--user` to wire your home directory instead of just this project, `--dry-run` to
 see what it would do, or use `--claude`, `--codex`, or `--kiro` to pick one harness.
+Kiro 3.x loads the generated standalone hooks automatically; for Kiro 2.x use
+the generated companion agent with `kiro-cli --agent xscs`.
 
 For Codex's MCP tools (Claude Code's are registered by `init`), use the same
 runtime that owns the installed command. From a source checkout:
@@ -207,5 +209,6 @@ subprocesses).
 xscs init --dry-run     # shows the files involved
 ```
 
-Remove the `xscs` entries from `.claude/settings.json`, `.codex/hooks.json`, and `.kiro/hooks/xscs.json`
+Remove the `xscs` entries from `.claude/settings.json`, `.codex/hooks.json`,
+`.kiro/hooks/xscs.json`, and `.kiro/agents/xscs.json`
 (originals are kept as `*.xscs-backup-*`), then delete `~/.xscs/`.

@@ -38,8 +38,10 @@ processes, never running at the same time except by accident.
 
 Installed by `xscs init` into `.claude/settings.json` and `.codex/hooks.json`, or
 explicitly for Kiro with `xscs init --kiro`. Kiro maps its available
-`AgentSpawn`, `UserPromptSubmit`, and `Stop` events into the shared lifecycle;
-it does not expose compaction or session-end hooks.
+startup, prompt-submit, and stop events into the shared lifecycle. Kiro 3.x
+uses standalone `SessionStart`, `UserPromptSubmit`, and `Stop` hooks. Kiro 2.x
+uses the companion `xscs` agent's `agentSpawn`, `userPromptSubmit`, and `stop`
+hooks. Neither generation exposes compaction or session-end hooks.
 
 | Event | Matcher | Timeout | What it does |
 |---|---|---|---|
@@ -120,7 +122,7 @@ but nothing stops your hooks from running a *stale* bundle indefinitely.
 xscs init                      # this project only
 xscs init --user               # your home dir — applies to every repo
 xscs init --claude             # one harness only
-xscs init --kiro --with-mcp    # Kiro CLI 3 hooks and MCP
+xscs init --kiro --with-mcp    # Kiro 3 hooks, Kiro 2 xscs agent, and MCP
 xscs init --dry-run            # show the diff without writing
 xscs init --no-mcp             # skip Claude Code MCP registration
 ```
@@ -128,6 +130,10 @@ xscs init --no-mcp             # skip Claude Code MCP registration
 `init` merges into existing config rather than replacing it, identifies its own
 entries by command signature (so re-running updates in place instead of stacking
 duplicates), and backs up any pre-existing file to `*.xscs-backup-<epoch>`.
+
+Kiro 3.x discovers `.kiro/hooks/xscs.json` automatically. Kiro 2.x keeps hooks
+inside agent configuration, so launch its generated integration with
+`kiro-cli --agent xscs`.
 
 Codex MCP registration is a separate command — `init` prints it:
 

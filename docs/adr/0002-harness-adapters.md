@@ -17,8 +17,11 @@ event availability, and timeouts. Shared hook workflows consume normalized data.
 
 Harness differences are explicit and contract-tested. Adding another harness is
 additive rather than a new set of branches across install and hook code. Kiro
-maps only the lifecycle events its CLI 3.0 contract actually exposes and uses
-plain stdout context injection rather than Claude/Codex's structured output.
+maps only the lifecycle events its CLI exposes and uses plain stdout context
+injection rather than Claude/Codex's structured output. Because Kiro 2.x embeds
+camelCase hooks in agent configuration while Kiro 3.x discovers standalone
+PascalCase hook files, installation emits both representations from the same
+adapter-owned command contract.
 
 ## Alternatives
 

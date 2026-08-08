@@ -168,15 +168,31 @@ describe('install', () => {
         expect(registry.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
     });
 
-    test('installs Kiro CLI 3 hooks and MCP configuration', () => {
+    test('installs Kiro CLI 3 hooks, Kiro CLI 2 agent hooks, and MCP configuration', () => {
         const dir = tmp();
         const result = installKiro({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true });
         expect(result.path).toBe(join(dir, '.kiro', 'hooks', 'xscs.json'));
         const hooks = JSON.parse(readFileSync(result.path, 'utf8')) as { version: string; hooks: unknown[] };
         expect(hooks.version).toBe('v1');
         expect(hooks.hooks).toHaveLength(3);
+        expect(hooks.hooks).toEqual(
+            expect.arrayContaining([expect.objectContaining({ trigger: 'SessionStart' })]),
+        );
+        const agent = JSON.parse(readFileSync(join(dir, '.kiro', 'agents', 'xscs.json'), 'utf8')) as {
+            includeMcpJson: boolean;
+            hooks: Record<string, Array<{ command: string }>>;
+            mcpServers: Record<string, { args: string[]; command: string }>;
+        };
+        expect(agent.includeMcpJson).toBe(true);
+        expect(agent.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+        expect(Object.keys(agent.hooks)).toEqual(['agentSpawn', 'userPromptSubmit', 'stop']);
+        expect(agent.hooks.agentSpawn![0]!.command).toContain('--event SessionStart');
         const mcp = JSON.parse(readFileSync(join(dir, '.kiro', 'settings', 'mcp.json'), 'utf8')) as McpFixture;
         expect(mcp.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+
+        const repeated = installKiro({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true });
+        expect(repeated.action).toBe('unchanged');
+        expect(repeated.companions?.[0]?.action).toBe('unchanged');
     });
 
     test('refuses to rewrite a settings file it cannot parse', () => {

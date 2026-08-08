@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { ConfigurationError } from './errors';
 import {
+    applyKiro2AgentConfiguration,
     claudeHarness,
     codexHarness,
     type HarnessAdapter,
@@ -31,6 +32,7 @@ export interface InstallResult {
     path: string;
     action: 'created' | 'updated' | 'unchanged';
     backup?: string;
+    companions?: InstallResult[];
 }
 
 /**
@@ -69,7 +71,19 @@ export function installCodex(opts: InstallOptions): InstallResult {
 
 export function installKiro(opts: InstallOptions): InstallResult {
     if (opts.withMcp) readJson(kiroMcpPath(opts));
+    const agentFile = join(opts.target, '.kiro', 'agents', 'xscs.json');
+    const existingAgent = readJson(agentFile);
     const result = installHarness(kiroHarness, opts);
+    const runtime = opts.runtime ?? process.execPath;
+    const command = opts.command ?? [runtime, opts.entry];
+    const agent = writeJson(
+        agentFile,
+        dirname(agentFile),
+        applyKiro2AgentConfiguration(existingAgent, command, opts.withMcp ?? false),
+        existingAgent,
+        opts.dryRun,
+    );
+    result.companions = [agent];
     if (opts.withMcp) installKiroMcp(opts);
     return result;
 }

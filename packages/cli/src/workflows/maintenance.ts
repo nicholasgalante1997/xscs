@@ -38,6 +38,7 @@ export async function cmdDistill(input: DistillInput): Promise<void> {
         : await distillPending(context.db, {
               mode,
               dryRun: input.dryRun,
+              backend: input.backend,
               limit: input.limit ?? 10,
           });
 

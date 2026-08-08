@@ -81,6 +81,7 @@ export async function runHook(args: HookArgs): Promise<void> {
                 CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR,
                 CODEX_HOME: process.env.CODEX_HOME,
                 KIRO_HOME: process.env.KIRO_HOME,
+                KIRO_SESSION_ID: process.env.KIRO_SESSION_ID,
                 USER_PROMPT: process.env.USER_PROMPT,
             });
             if (!normalized) {

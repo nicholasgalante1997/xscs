@@ -23,6 +23,7 @@ export interface HarnessEnvironment {
     CLAUDE_PROJECT_DIR?: string;
     CODEX_HOME?: string;
     KIRO_HOME?: string;
+    KIRO_SESSION_ID?: string;
     USER_PROMPT?: string;
 }
 
@@ -140,6 +141,7 @@ class KiroHarnessAdapter extends BaseHarnessAdapter {
         if (!isRecord(value)) return null;
         const normalized = {
             ...value,
+            session_id: typeof value.session_id === 'string' ? value.session_id : env.KIRO_SESSION_ID,
             prompt: typeof value.prompt === 'string' ? value.prompt : env.USER_PROMPT,
             last_assistant_message:
                 typeof value.last_assistant_message === 'string'
@@ -152,7 +154,12 @@ class KiroHarnessAdapter extends BaseHarnessAdapter {
     }
 
     recognizes(input: HookInput, env: HarnessEnvironment): boolean {
-        return Boolean(env.KIRO_HOME) || ['agentSpawn', 'userPromptSubmit', 'stop'].includes(input.hook_event_name ?? '');
+        return (
+            Boolean(env.KIRO_HOME || env.KIRO_SESSION_ID) ||
+            ['agentSpawn', 'userPromptSubmit', 'stop', 'SessionStart', 'UserPromptSubmit', 'Stop'].includes(
+                input.hook_event_name ?? '',
+            )
+        );
     }
 
     override applyConfiguration(
@@ -161,7 +168,7 @@ class KiroHarnessAdapter extends BaseHarnessAdapter {
         _withMcp: boolean,
     ): Record<string, unknown> {
         const hooks: Array<[string, string, string]> = [
-            ['xscs-session-start', 'SessionStart', 'AgentSpawn'],
+            ['xscs-session-start', 'SessionStart', 'SessionStart'],
             ['xscs-user-prompt', 'UserPromptSubmit', 'UserPromptSubmit'],
             ['xscs-stop', 'Stop', 'Stop'],
         ];
@@ -183,6 +190,53 @@ class KiroHarnessAdapter extends BaseHarnessAdapter {
     }
 }
 
+/**
+ * Kiro 2.x discovers hooks inside a selected agent configuration. Kiro 3.x
+ * moved them to standalone files, so xscs installs this companion agent rather
+ * than trying to force one generation's schema through the other.
+ */
+export function applyKiro2AgentConfiguration(
+    existing: Record<string, unknown>,
+    command: string[],
+    withMcp: boolean,
+): Record<string, unknown> {
+    const hooks = isRecord(existing.hooks) ? { ...existing.hooks } : {};
+    const mcpServers = isRecord(existing.mcpServers) ? { ...existing.mcpServers } : {};
+    const definitions: Array<[string, string, number]> = [
+        ['agentSpawn', 'SessionStart', 20_000],
+        ['userPromptSubmit', 'UserPromptSubmit', 20_000],
+        ['stop', 'Stop', 10_000],
+    ];
+    for (const [trigger, event, timeoutMs] of definitions) {
+        const current = Array.isArray(hooks[trigger]) ? hooks[trigger] : [];
+        const foreign = current.filter((hook) => !isRecord(hook) || !isOurs(String(hook.command ?? '')));
+        hooks[trigger] = [
+            ...foreign,
+            {
+                command: [...command, 'hook', '--agent', 'kiro', '--event', event].map(quote).join(' '),
+                timeout_ms: timeoutMs,
+            },
+        ];
+    }
+    if (withMcp) {
+        mcpServers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
+    }
+    return {
+        ...existing,
+        name: typeof existing.name === 'string' ? existing.name : 'xscs',
+        description:
+            typeof existing.description === 'string'
+                ? existing.description
+                : 'Kiro CLI 2.x agent with cross-session context recall',
+        prompt:
+            typeof existing.prompt === 'string'
+                ? existing.prompt
+                : 'Use recalled xscs context as prior evidence, verifying anything load-bearing before relying on it.',
+        ...(withMcp ? { includeMcpJson: true, mcpServers } : {}),
+        hooks,
+    };
+}
+
 export const claudeHarness: HarnessAdapter = new ClaudeHarnessAdapter();
 export const codexHarness: HarnessAdapter = new CodexHarnessAdapter();
 export const kiroHarness: HarnessAdapter = new KiroHarnessAdapter();
@@ -198,6 +252,7 @@ export function recognizeHarness(
         CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR,
         CODEX_HOME: process.env.CODEX_HOME,
         KIRO_HOME: process.env.KIRO_HOME,
+        KIRO_SESSION_ID: process.env.KIRO_SESSION_ID,
         USER_PROMPT: process.env.USER_PROMPT,
     },
 ): HarnessAdapter | null {

@@ -62,6 +62,10 @@ Claude Code MCP registration is written to `.mcp.json`. Kiro MCP registration
 is written to `.kiro/settings/mcp.json`. Codex manages MCP servers in its TOML
 configuration, so register it once with the command printed by `xscs init`.
 
+Kiro 3.x discovers `.kiro/hooks/xscs.json` automatically. Kiro 2.x requires an
+agent configuration for lifecycle hooks, so xscs also writes
+`.kiro/agents/xscs.json`; launch it with `kiro-cli --agent xscs`.
+
 Codex requires interactive trust approval for new or changed project hooks.
 Start a fresh Codex session after installation and approve the xscs hooks when
 prompted; unapproved hooks cannot inject SessionStart context.
@@ -165,7 +169,7 @@ constraints immediately.
 
 | Capability | Claude Code | Codex | Kiro CLI |
 | --- | --- | --- | --- |
-| Session-start recall | Yes | Yes | Yes, through `AgentSpawn` |
+| Session-start recall | Yes | Yes | Yes, through `SessionStart` (3.x) or `agentSpawn` (2.x) |
 | Prompt capture/top-up | Yes | Yes | Yes |
 | Turn checkpoint | Yes | Yes | Yes |
 | Compaction capture | Yes | Yes | Not exposed by Kiro |

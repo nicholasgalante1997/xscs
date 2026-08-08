@@ -57,7 +57,8 @@ export function cmdInit(input: InitInput): void {
     }
     if (input.kiro) {
         const result = installKiro({ target, entry, command, withMcp: input.withMcp, dryRun: input.dryRun });
-        results.push({ harness: 'kiro', ...result });
+        results.push({ harness: 'kiro-v3', ...result });
+        for (const companion of result.companions ?? []) results.push({ harness: 'kiro-v2', ...companion });
     }
 
     const lines = results.map(
@@ -81,7 +82,9 @@ export function cmdInit(input: InitInput): void {
                 : 'Codex security: start a fresh interactive session and approve the xscs project hooks when prompted. New or changed hooks do not run until approved.',
             'For Codex, register the MCP server with:',
             `  codex mcp add xscs -- ${command.join(' ')} mcp`,
-            !input.kiro ? '' : 'Kiro will load xscs hooks and MCP tools at its next idle boundary.',
+            !input.kiro
+                ? ''
+                : 'Kiro 3.x loads the standalone hooks automatically. On Kiro 2.x, start with `kiro-cli --agent xscs`.',
         ]
             .filter(Boolean)
             .join('\n'),
@@ -130,6 +133,8 @@ export function cmdDoctor(input: ContextInput): void {
         ['codex user hooks', `${homedir()}/.codex/hooks.json`],
         ['kiro project hooks', `${context.workspace.root}/.kiro/hooks/xscs.json`],
         ['kiro user hooks', `${homedir()}/.kiro/hooks/xscs.json`],
+        ['kiro 2 project agent', `${context.workspace.root}/.kiro/agents/xscs.json`],
+        ['kiro 2 user agent', `${homedir()}/.kiro/agents/xscs.json`],
     ] as const) {
         const present = existsSync(path);
         const wired = present && statSync(path).size > 0 ? hasXscsHook(path) : false;
