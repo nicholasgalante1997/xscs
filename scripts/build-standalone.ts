@@ -36,6 +36,10 @@ mkdirSync(OUTPUT_DIR, { recursive: true });
 for (const artifact of selected) {
     const outfile = resolve(OUTPUT_DIR, artifact.filename);
     console.log(`Compiling ${artifact.filename}...`);
+    await compileWithRetry(artifact, outfile);
+}
+
+async function compileWithRetry(artifact: Artifact, outfile: string, attempt = 1): Promise<void> {
     const result = await Bun.build({
         entrypoints: [resolve(ROOT, 'packages/cli/index.ts')],
         compile: {
@@ -53,7 +57,16 @@ for (const artifact of selected) {
         minify: true,
         packages: 'bundle',
         sourcemap: 'none',
+    }).catch((error: unknown) => {
+        // Bun's cross-compile target download is occasionally interrupted on CI
+        // runners (esp. windows), producing a truncated executable extraction.
+        if (attempt < 3 && String(error).includes('download may be incomplete')) return null;
+        throw error;
     });
+    if (result === null) {
+        console.warn(`Retrying ${artifact.filename} (attempt ${attempt + 1}) after incomplete target download...`);
+        return compileWithRetry(artifact, outfile, attempt + 1);
+    }
     if (!result.success) throw new AggregateError(result.logs, `failed to compile ${artifact.filename}`);
 }
 

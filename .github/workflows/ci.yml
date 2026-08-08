@@ -24,6 +24,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
+      - uses: jdx/mise-action@v2
+        with:
+          install: false
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run build
