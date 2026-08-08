@@ -1,0 +1,32 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "xscs-session-start",
+      "trigger": "SessionStart",
+      "action": {
+        "type": "command",
+        "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent kiro --event SessionStart"
+      },
+      "timeout": 20
+    },
+    {
+      "name": "xscs-user-prompt",
+      "trigger": "UserPromptSubmit",
+      "action": {
+        "type": "command",
+        "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent kiro --event UserPromptSubmit"
+      },
+      "timeout": 20
+    },
+    {
+      "name": "xscs-stop",
+      "trigger": "Stop",
+      "action": {
+        "type": "command",
+        "command": "/Users/nickgalante/.bun/bin/bun /Users/nickgalante/Claude-Goals/x-session-context-store/packages/cli/dist/xscs.js hook --agent kiro --event Stop"
+      },
+      "timeout": 10
+    }
+  ]
+}
