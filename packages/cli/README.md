@@ -11,7 +11,7 @@ curation dashboard.
 
 ## Why xscs
 
-Chat transcripts are plentiful but poor long-term context. They contain tool
+Chat transcripts are excessive and poor long-term context. They contain tool
 noise, transient narration, stale plans, and unreviewed model claims. xscs keeps
 the raw event stream separate from a curated memory layer built around durable
 engineering information:
