@@ -180,11 +180,14 @@ export function openStore(opts: OpenOptions = {}): DB {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     const db = platform.open(path, { create: !opts.readonly, readonly: opts.readonly });
 
-    // WAL + a generous busy timeout: several hook processes from different
-    // harnesses can hit this file at the same instant, and a hook that throws
-    // SQLITE_BUSY is a hook that loses a session's context forever.
-    db.run('PRAGMA journal_mode = WAL');
+    // Busy timeout must be set FIRST: several hook processes from different
+    // harnesses can hit this file at the same instant, and a fresh connection
+    // has a zero-length retry budget by default. Setting journal_mode before
+    // busy_timeout leaves that very first statement unprotected, so a hook
+    // that throws SQLITE_BUSY on open is a hook that loses a session's
+    // context forever.
     db.run('PRAGMA busy_timeout = 5000');
+    db.run('PRAGMA journal_mode = WAL');
     db.run('PRAGMA synchronous = NORMAL');
     db.run('PRAGMA foreign_keys = ON');
 
