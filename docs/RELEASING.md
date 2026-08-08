@@ -38,6 +38,55 @@ initialization, and dashboard serving from the single file.
 
 ## Publishing
 
+### Local npm release
+
+The first npm releases are operator-driven. Preparation and publication are
+separate commands, and the exact tarball accepted locally is the artifact sent
+to npm.
+
+1. Set and commit the intended version in `packages/cli/package.json` and update
+   the changelog. Start from a clean worktree.
+2. Prepare the release candidate:
+
+   ```bash
+   mise run release-prepare -- 0.2.0-alpha.0
+   ```
+
+   This runs the frozen install, complete verification suite, package allowlist,
+   hook benchmark, Node 24.0/current and Bun installed-package smoke, and an
+   `npm publish --dry-run`. It writes the tarball, checksums, and a manifest to
+   `release/npm/` but cannot publish.
+3. Inspect the `.tgz`, its `.manifest.json`, `SHA256SUMS`, and `SHA512SUMS`.
+4. Rehearse the guarded publish command if desired:
+
+   ```bash
+   mise run release-publish -- \
+     release/npm/cross-session-summary-0.2.0-alpha.0.tgz \
+     --dry-run
+   ```
+5. Publish the exact accepted artifact:
+
+   ```bash
+   mise run release-publish -- \
+     release/npm/cross-session-summary-0.2.0-alpha.0.tgz \
+     --confirm cross-session-summary@0.2.0-alpha.0
+   ```
+
+The publish stage refuses dirty or changed commits, changed package metadata,
+checksum mismatches, already-published versions, dirty preparation manifests,
+missing repository/homepage/bugs metadata, and missing explicit confirmation.
+After publication it verifies dist-tags and installs the registry package into
+a clean temporary environment. For a manual repeat of the post-publish check:
+
+```bash
+mise run release-verify -- cross-session-summary@0.2.0-alpha.0
+```
+
+Authenticate with `npm login` before publishing. Credentials remain in npm's
+user configuration and must never be written to this repository.
+
+### GitHub standalone release
+
 1. Run `bun scripts/validate-release-tag.ts v<VERSION>`.
 2. Create and push the reviewed `v<VERSION>` tag.
 3. The Release workflow builds and executes all five native artifacts.

@@ -1,5 +1,5 @@
 [tools]
-bun = "1.3"
+bun = "1.3.9"
 node = "24"
 
 [env]
@@ -55,3 +55,15 @@ run = "bun scripts/smoke-standalone.ts"
 [tasks.verify]
 description = "Build, type-check, test, and lint the workspace without dist races"
 run = "turbo run build --force && turbo run check-types && turbo run test && bun run lint"
+
+[tasks.release-prepare]
+description = "Build, verify, pack, and smoke an exact npm release artifact"
+run = "bun scripts/release-prepare.ts"
+
+[tasks.release-publish]
+description = "Publish an exact prepared npm tarball after explicit confirmation"
+run = "bun scripts/release-publish.ts"
+
+[tasks.release-verify]
+description = "Install and verify an already published npm version"
+run = "bun scripts/release-verify.ts"
