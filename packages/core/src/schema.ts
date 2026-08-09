@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 /**
- * The two harnesses this store bridges. `other` exists so a third tool (an SDK
- * agent, a CI runner) can write to the same store without a schema change.
+ * First-class harness identities. `other` remains available so an SDK agent or
+ * CI runner can write to the same store without inventing a supported harness.
  */
-export const AgentKind = z.enum(['claude', 'codex', 'other']);
+export const AgentKind = z.enum(['claude', 'codex', 'kiro', 'other']);
 export type AgentKind = z.infer<typeof AgentKind>;
 
 /**

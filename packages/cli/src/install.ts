@@ -1,29 +1,30 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
-interface HookCommand {
-    type: 'command';
-    command: string;
-    timeout?: number;
-    statusMessage?: string;
-}
-
-interface HookMatcher {
-    matcher?: string;
-    hooks: HookCommand[];
-}
-
-type HookMap = Record<string, HookMatcher[]>;
+import { ConfigurationError } from './errors';
+import {
+    applyKiro2AgentConfiguration,
+    claudeHarness,
+    codexHarness,
+    type HarnessAdapter,
+    type HookMap,
+    kiroHarness,
+    mergeHookMaps,
+} from './harness';
 
 export interface InstallOptions {
-    /** Directory whose `.claude` / `.codex` folder we write into. */
+    /** Directory whose harness configuration folder we write into. */
     target: string;
     /** Absolute path to the xscs entrypoint, invoked with the bun runtime. */
     entry: string;
     runtime?: string;
+    /** Full self-invocation prefix. Standalone executables have no entry argument. */
+    command?: string[];
     /** Also register the MCP server so the agent can read and write memory on purpose. */
     withMcp?: boolean;
+    /** Use the harness's user-wide MCP registry rather than the project registry. */
+    userScope?: boolean;
     dryRun?: boolean;
 }
 
@@ -31,6 +32,7 @@ export interface InstallResult {
     path: string;
     action: 'created' | 'updated' | 'unchanged';
     backup?: string;
+    companions?: InstallResult[];
 }
 
 /**
@@ -48,42 +50,14 @@ export interface InstallResult {
  * the transcript at distillation time.
  */
 export function hookMap(runtime: string, entry: string, agent: 'claude' | 'codex'): HookMap {
-    const cmd = (event: string): string => `${quote(runtime)} ${quote(entry)} hook --agent ${agent} --event ${event}`;
-    return {
-        SessionStart: [
-            {
-                matcher: 'startup|resume|clear|compact|fork',
-                hooks: [{ type: 'command', command: cmd('SessionStart'), timeout: 20, statusMessage: 'Recalling stored context' }],
-            },
-        ],
-        UserPromptSubmit: [
-            { hooks: [{ type: 'command', command: cmd('UserPromptSubmit'), timeout: 15 }] },
-        ],
-        Stop: [{ hooks: [{ type: 'command', command: cmd('Stop'), timeout: 10 }] }],
-        PreCompact: [{ matcher: 'manual|auto', hooks: [{ type: 'command', command: cmd('PreCompact'), timeout: 20 }] }],
-        // Codex caps SessionEnd at three seconds; the handler only writes a row
-        // and detaches, so this is comfortable for both harnesses.
-        SessionEnd: [{ hooks: [{ type: 'command', command: cmd('SessionEnd'), timeout: 3 }] }],
-    };
+    return (agent === 'claude' ? claudeHarness : codexHarness).buildHookMap([runtime, entry]);
 }
 
 export function installClaude(opts: InstallOptions): InstallResult {
-    const dir = join(opts.target, '.claude');
-    const file = join(dir, 'settings.json');
-    const runtime = opts.runtime ?? process.execPath;
-    const existing = readJson(file);
-    const next: Record<string, unknown> = {
-        ...existing,
-        hooks: mergeHooks(asHookMap(existing.hooks), hookMap(runtime, opts.entry, 'claude')),
-    };
-
-    if (opts.withMcp) {
-        const servers = isRecord(next.mcpServers) ? { ...next.mcpServers } : {};
-        servers.xscs = { command: runtime, args: [opts.entry, 'mcp'] };
-        next.mcpServers = servers;
-    }
-
-    return writeJson(file, dir, next, existing, opts.dryRun);
+    if (opts.withMcp) readJson(claudeMcpPath(opts));
+    const result = installHarness(claudeHarness, opts);
+    if (opts.withMcp) installClaudeMcp(opts);
+    return result;
 }
 
 /**
@@ -92,15 +66,26 @@ export function installClaude(opts: InstallOptions): InstallResult {
  * hand-written TOML config.
  */
 export function installCodex(opts: InstallOptions): InstallResult {
-    const dir = join(opts.target, '.codex');
-    const file = join(dir, 'hooks.json');
+    return installHarness(codexHarness, opts);
+}
+
+export function installKiro(opts: InstallOptions): InstallResult {
+    if (opts.withMcp) readJson(kiroMcpPath(opts));
+    const agentFile = join(opts.target, '.kiro', 'agents', 'xscs.json');
+    const existingAgent = readJson(agentFile);
+    const result = installHarness(kiroHarness, opts);
     const runtime = opts.runtime ?? process.execPath;
-    const existing = readJson(file);
-    const next: Record<string, unknown> = {
-        ...existing,
-        hooks: mergeHooks(asHookMap(existing.hooks), hookMap(runtime, opts.entry, 'codex')),
-    };
-    return writeJson(file, dir, next, existing, opts.dryRun);
+    const command = opts.command ?? [runtime, opts.entry];
+    const agent = writeJson(
+        agentFile,
+        dirname(agentFile),
+        applyKiro2AgentConfiguration(existingAgent, command, opts.withMcp ?? false),
+        existingAgent,
+        opts.dryRun,
+    );
+    result.companions = [agent];
+    if (opts.withMcp) installKiroMcp(opts);
+    return result;
 }
 
 export function userClaudeDir(): string {
@@ -113,20 +98,46 @@ export function userClaudeDir(): string {
  * of stacking duplicates on top of a user's existing hooks.
  */
 export function mergeHooks(existing: HookMap, ours: HookMap): HookMap {
-    const out: HookMap = { ...existing };
-    for (const [event, matchers] of Object.entries(ours)) {
-        const kept = (out[event] ?? []).filter((entry) => !entry.hooks?.some((h) => isOurs(h.command)));
-        out[event] = [...kept, ...matchers];
-    }
-    return out;
+    return mergeHookMaps(existing, ours);
 }
 
-function isOurs(command: string | undefined): boolean {
-    return typeof command === 'string' && / hook (--agent \w+ )?--event /.test(command) && command.includes('xscs');
+function installHarness(adapter: HarnessAdapter, opts: InstallOptions): InstallResult {
+    const file = join(opts.target, adapter.configDirectory, adapter.configFile);
+    const dir = dirname(file);
+    const runtime = opts.runtime ?? process.execPath;
+    const command = opts.command ?? [runtime, opts.entry];
+    const existing = readJson(file);
+    const next = adapter.applyConfiguration(existing, command, opts.withMcp ?? false);
+    return writeJson(file, dir, next, existing, opts.dryRun);
 }
 
-function asHookMap(value: unknown): HookMap {
-    return isRecord(value) ? (value as HookMap) : {};
+function installClaudeMcp(opts: InstallOptions): InstallResult {
+    const file = claudeMcpPath(opts);
+    const dir = opts.userScope ? opts.target : join(opts.target);
+    const existing = readJson(file);
+    const servers = isRecord(existing.mcpServers) ? { ...existing.mcpServers } : {};
+    const runtime = opts.runtime ?? process.execPath;
+    const command = opts.command ?? [runtime, opts.entry];
+    servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
+    return writeJson(file, dir, { ...existing, mcpServers: servers }, existing, opts.dryRun);
+}
+
+function claudeMcpPath(opts: InstallOptions): string {
+    return opts.userScope ? join(opts.target, '.claude.json') : join(opts.target, '.mcp.json');
+}
+
+function installKiroMcp(opts: InstallOptions): InstallResult {
+    const file = kiroMcpPath(opts);
+    const dir = dirname(file);
+    const existing = readJson(file);
+    const servers = isRecord(existing.mcpServers) ? { ...existing.mcpServers } : {};
+    const command = opts.command ?? [opts.runtime ?? process.execPath, opts.entry];
+    servers.xscs = { command: command[0], args: [...command.slice(1), 'mcp'] };
+    return writeJson(file, dir, { ...existing, mcpServers: servers }, existing, opts.dryRun);
+}
+
+function kiroMcpPath(opts: InstallOptions): string {
+    return join(opts.target, '.kiro', 'settings', 'mcp.json');
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -136,8 +147,12 @@ function readJson(file: string): Record<string, unknown> {
         return isRecord(parsed) ? parsed : {};
     } catch {
         // A settings file we cannot parse is a settings file we must not rewrite.
-        throw new Error(`${file} exists but is not valid JSON — fix or move it before installing hooks.`);
+        throw new ConfigurationError(`${file} exists but is not valid JSON — fix or move it before installing hooks.`);
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function writeJson(
@@ -160,12 +175,4 @@ function writeJson(
     }
     writeFileSync(file, serialised, 'utf8');
     return { path: file, action: had ? 'updated' : 'created', backup };
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-    return !!v && typeof v === 'object' && !Array.isArray(v);
-}
-
-function quote(s: string): string {
-    return /[\s"']/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s;
 }

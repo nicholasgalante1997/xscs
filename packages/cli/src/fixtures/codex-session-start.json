@@ -1,0 +1,8 @@
+{
+    "hook_event_name": "SessionStart",
+    "session_id": "codex-fixture-session",
+    "transcript_path": "/tmp/.codex/sessions/2026/07/29/rollout-fixture.jsonl",
+    "cwd": "__WORKSPACE__",
+    "model": "codex-fixture-model",
+    "source": "startup"
+}

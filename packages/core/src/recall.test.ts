@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { type DB, openStore } from './db';
+import { bunDatabasePlatform } from '../bun';
+import { configureDatabasePlatform, type DB, openStore } from './db';
 import { decay } from './decay';
 import { findDriftCandidates, jaccard, tokens } from './drift';
 import { buildBrief, rankItems } from './recall';
@@ -11,6 +12,8 @@ let db: DB;
 let ws: string;
 
 const DAY = 86_400_000;
+
+configureDatabasePlatform(bunDatabasePlatform);
 
 beforeEach(() => {
     db = openStore({ path: ':memory:', fresh: true });

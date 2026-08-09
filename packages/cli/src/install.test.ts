@@ -1,46 +1,27 @@
-import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { flagBool, flagList, flagNumber, flagString, parseArgs } from './args';
-import { hookMap, installClaude, installCodex, mergeHooks } from './install';
+import { describe, expect, test } from 'bun:test';
+
 import { resolveAgent } from './hook';
+import { hookMap, installClaude, installCodex, installKiro, mergeHooks } from './install';
 
 const ENTRY = '/opt/xscs/packages/cli/dist/xscs.js';
+
+interface SettingsFixture {
+    hooks: Record<string, unknown>;
+    model?: string;
+    permissions?: { allow: string[] };
+}
+
+interface McpFixture {
+    mcpServers: { xscs: { args: string[]; command: string } };
+}
 
 function tmp(): string {
     return mkdtempSync(join(tmpdir(), 'xscs-install-'));
 }
-
-describe('arg parsing', () => {
-    test('splits command, positionals and flags', () => {
-        const args = parseArgs(['review', 'itm_1', '--accept', 'itm_2', '--json']);
-        expect(args.command).toBe('review');
-        expect(args.positionals).toEqual(['itm_1']);
-        expect(flagString(args, 'accept')).toBe('itm_2');
-        expect(flagBool(args, 'json')).toBe(true);
-    });
-
-    test('repeated flags collect into a list', () => {
-        const args = parseArgs(['review', '--accept', 'a', '--accept', 'b', '--accept', 'c']);
-        expect(flagList(args, 'accept')).toEqual(['a', 'b', 'c']);
-    });
-
-    test('comma-separated values also become a list', () => {
-        expect(flagList(parseArgs(['list', '--status', 'active,proposed']), 'status')).toEqual(['active', 'proposed']);
-    });
-
-    test('--key=value form', () => {
-        expect(flagNumber(parseArgs(['brief', '--budget=800']), 'budget')).toBe(800);
-    });
-
-    test('a flag followed by another flag is boolean', () => {
-        const args = parseArgs(['distill', '--dry-run', '--mode', 'agent']);
-        expect(flagBool(args, 'dry-run')).toBe(true);
-        expect(flagString(args, 'mode')).toBe('agent');
-    });
-});
 
 describe('hook wiring', () => {
     test('covers the events the design depends on', () => {
@@ -97,11 +78,12 @@ describe('install', () => {
         expect(claude.action).toBe('created');
         expect(codex.action).toBe('created');
 
-        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as Record<string, any>;
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
         expect(settings.hooks.SessionStart).toBeDefined();
-        expect(settings.mcpServers.xscs.args).toEqual([ENTRY, 'mcp']);
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs.args).toEqual([ENTRY, 'mcp']);
 
-        const hooks = JSON.parse(readFileSync(codex.path, 'utf8')) as Record<string, any>;
+        const hooks = JSON.parse(readFileSync(codex.path, 'utf8')) as SettingsFixture;
         expect(hooks.hooks.SessionEnd).toBeDefined();
     });
 
@@ -117,16 +99,103 @@ describe('install', () => {
         expect(res.action).toBe('updated');
         expect(res.backup).toBeDefined();
 
-        const settings = JSON.parse(readFileSync(res.path, 'utf8')) as Record<string, any>;
+        const settings = JSON.parse(readFileSync(res.path, 'utf8')) as SettingsFixture;
         expect(settings.model).toBe('opus');
         expect(settings.permissions.allow).toEqual(['Bash(ls:*)']);
         expect(settings.hooks.SessionStart).toBeDefined();
+    });
+
+    test('standalone configuration invokes the executable without a bunfs entry', () => {
+        const dir = tmp();
+        const executable = '/opt/xscs';
+        const claude = installClaude({
+            target: dir,
+            entry: '/$bunfs/root/index.js',
+            command: [executable],
+            withMcp: true,
+        });
+        const codex = installCodex({ target: dir, entry: '/$bunfs/root/index.js', command: [executable] });
+
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        expect(JSON.stringify(settings)).not.toContain('$bunfs');
+        expect(JSON.stringify(settings)).toContain(`${executable} hook`);
+        expect(readFileSync(codex.path, 'utf8')).not.toContain('$bunfs');
+    });
+
+    test('Windows standalone paths remain one quoted command and one MCP executable', () => {
+        const dir = tmp();
+        const executable = String.raw`C:\Program Files\xscs\xscs-windows-x64.exe`;
+        // Bun's Windows embedded filesystem is "B:\~BUN\...", not "$bunfs".
+        const entry = String.raw`B:\~BUN\root\index.js`;
+        const claude = installClaude({
+            target: dir,
+            entry,
+            command: [executable],
+            withMcp: true,
+        });
+        const codex = installCodex({
+            target: dir,
+            entry,
+            command: [executable],
+        });
+
+        const settings = JSON.parse(readFileSync(claude.path, 'utf8')) as SettingsFixture;
+        const mcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: executable, args: ['mcp'] });
+        const command = (
+            settings.hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>
+        )[0]!.hooks[0]!.command;
+        expect(command).toStartWith(`"${executable}" hook`);
+        expect(command).not.toContain('$bunfs');
+        expect(command).not.toContain('~BUN');
+        expect(readFileSync(codex.path, 'utf8')).toContain(`C:\\\\Program Files\\\\xscs`);
     });
 
     test('is idempotent', () => {
         const dir = tmp();
         installClaude({ target: dir, entry: ENTRY, runtime: 'bun' });
         expect(installClaude({ target: dir, entry: ENTRY, runtime: 'bun' }).action).toBe('unchanged');
+    });
+
+    test('user-scoped Claude MCP preserves the user registry', () => {
+        const dir = tmp();
+        writeFileSync(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { foreign: { command: 'foreign' } } }));
+        installClaude({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true, userScope: true });
+
+        const registry = JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf8')) as McpFixture & {
+            mcpServers: Record<string, unknown>;
+        };
+        expect(registry.mcpServers.foreign).toEqual({ command: 'foreign' });
+        expect(registry.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+    });
+
+    test('installs Kiro CLI 3 hooks, Kiro CLI 2 agent hooks, and MCP configuration', () => {
+        const dir = tmp();
+        const result = installKiro({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true });
+        expect(result.path).toBe(join(dir, '.kiro', 'hooks', 'xscs.json'));
+        const hooks = JSON.parse(readFileSync(result.path, 'utf8')) as { version: string; hooks: unknown[] };
+        expect(hooks.version).toBe('v1');
+        expect(hooks.hooks).toHaveLength(3);
+        expect(hooks.hooks).toEqual(
+            expect.arrayContaining([expect.objectContaining({ trigger: 'SessionStart' })]),
+        );
+        const agent = JSON.parse(readFileSync(join(dir, '.kiro', 'agents', 'xscs.json'), 'utf8')) as {
+            includeMcpJson: boolean;
+            hooks: Record<string, Array<{ command: string }>>;
+            mcpServers: Record<string, { args: string[]; command: string }>;
+        };
+        expect(agent.includeMcpJson).toBe(true);
+        expect(agent.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+        expect(Object.keys(agent.hooks)).toEqual(['agentSpawn', 'userPromptSubmit', 'stop']);
+        expect(agent.hooks.agentSpawn![0]!.command).toContain('--event SessionStart');
+        const mcp = JSON.parse(readFileSync(join(dir, '.kiro', 'settings', 'mcp.json'), 'utf8')) as McpFixture;
+        expect(mcp.mcpServers.xscs).toEqual({ command: 'bun', args: [ENTRY, 'mcp'] });
+
+        const repeated = installKiro({ target: dir, entry: ENTRY, runtime: 'bun', withMcp: true });
+        expect(repeated.action).toBe('unchanged');
+        expect(repeated.companions?.[0]?.action).toBe('unchanged');
     });
 
     test('refuses to rewrite a settings file it cannot parse', () => {

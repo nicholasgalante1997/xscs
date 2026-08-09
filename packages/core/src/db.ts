@@ -1,10 +1,11 @@
-import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { storePath } from './paths';
+import type { DatabaseConnection, DatabasePlatform } from './platform/database';
 
-export type DB = Database;
+export type DB = DatabaseConnection;
+export type { DatabaseConnection, DatabasePlatform, SqlStatement, SqlValue } from './platform/database';
 
 /**
  * Schema migrations, applied in order and recorded in `user_version`.
@@ -156,6 +157,7 @@ const MIGRATIONS: ReadonlyArray<(db: DB) => void> = [
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
+let platform: DatabasePlatform | null = null;
 
 export interface OpenOptions {
     path?: string;
@@ -164,18 +166,28 @@ export interface OpenOptions {
     fresh?: boolean;
 }
 
+export function configureDatabasePlatform(next: DatabasePlatform): void {
+    if (platform === next) return;
+    if (cached) throw new Error('Cannot replace the database platform while a cached store is open');
+    platform = next;
+}
+
 export function openStore(opts: OpenOptions = {}): DB {
     const path = opts.path ?? storePath();
     if (!opts.fresh && cached && cachedPath === path) return cached;
+    if (!platform) throw new Error('Database platform is not configured');
 
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    const db = new Database(path, { create: true, readwrite: true, strict: false });
+    const db = platform.open(path, { create: !opts.readonly, readonly: opts.readonly });
 
-    // WAL + a generous busy timeout: several hook processes from different
-    // harnesses can hit this file at the same instant, and a hook that throws
-    // SQLITE_BUSY is a hook that loses a session's context forever.
-    db.run('PRAGMA journal_mode = WAL');
+    // Busy timeout must be set FIRST: several hook processes from different
+    // harnesses can hit this file at the same instant, and a fresh connection
+    // has a zero-length retry budget by default. Setting journal_mode before
+    // busy_timeout leaves that very first statement unprotected, so a hook
+    // that throws SQLITE_BUSY on open is a hook that loses a session's
+    // context forever.
     db.run('PRAGMA busy_timeout = 5000');
+    db.run('PRAGMA journal_mode = WAL');
     db.run('PRAGMA synchronous = NORMAL');
     db.run('PRAGMA foreign_keys = ON');
 

@@ -1,0 +1,10 @@
+{
+    "hook_event_name": "SessionStart",
+    "session_id": "claude-fixture-session",
+    "transcript_path": "/tmp/.claude/projects/example/claude-fixture-session.jsonl",
+    "cwd": "__WORKSPACE__",
+    "model": {
+        "id": "claude-fixture-model"
+    },
+    "source": "startup"
+}

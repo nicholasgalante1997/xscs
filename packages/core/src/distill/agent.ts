@@ -1,6 +1,7 @@
+import { processPlatform } from '../platform/process';
 import { DistillResult, type ItemDraft } from '../schema';
 
-export type DistillerBackend = 'claude' | 'codex' | 'none';
+export type DistillerBackend = 'claude' | 'codex' | 'ollama' | 'none';
 
 export interface AgentDistillInput {
     /** Compressed transcript produced by `summariseForDistill`. */
@@ -73,6 +74,8 @@ export async function distillWithAgent(input: AgentDistillInput): Promise<AgentD
     const prompt = buildDistillPrompt(input);
     const timeout = input.timeoutMs ?? 120_000;
 
+    if (backend === 'ollama') return distillWithOllama(input, prompt, timeout);
+
     const cmd =
         backend === 'claude'
             ? [
@@ -89,10 +92,10 @@ export async function distillWithAgent(input: AgentDistillInput): Promise<AgentD
             : ['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', ...(input.model ? ['-m', input.model] : []), '-'];
 
     try {
-        const proc = Bun.spawn(cmd, {
-            stdin: new TextEncoder().encode(prompt),
-            stdout: 'pipe',
-            stderr: 'pipe',
+        const processResult = await processPlatform().run({
+            command: cmd,
+            stdin: prompt,
+            timeoutMs: timeout,
             env: {
                 ...process.env,
                 // Prevents the child session from firing our own hooks and
@@ -100,14 +103,7 @@ export async function distillWithAgent(input: AgentDistillInput): Promise<AgentD
                 XSCS_INTERNAL: '1',
             },
         });
-
-        const timer = setTimeout(() => proc.kill(), timeout);
-        const [stdout, stderr, exitCode] = await Promise.all([
-            new Response(proc.stdout).text(),
-            new Response(proc.stderr).text(),
-            proc.exited,
-        ]);
-        clearTimeout(timer);
+        const { stdout, stderr, exitCode } = processResult;
 
         if (exitCode !== 0 && !stdout.trim()) {
             return { drafts: [], backend, ok: false, error: `${backend} exited ${exitCode}: ${stderr.slice(0, 400)}` };
@@ -148,10 +144,73 @@ function clamp(n: number): number {
 
 export function detectBackend(): DistillerBackend {
     const configured = process.env.XSCS_DISTILLER;
-    if (configured === 'claude' || configured === 'codex' || configured === 'none') return configured;
-    if (Bun.which('claude')) return 'claude';
-    if (Bun.which('codex')) return 'codex';
+    if (configured === 'claude' || configured === 'codex' || configured === 'ollama' || configured === 'none') return configured;
+    if (processPlatform().which('claude')) return 'claude';
+    if (processPlatform().which('codex')) return 'codex';
+    if (processPlatform().which('ollama')) return 'ollama';
     return 'none';
+}
+
+async function distillWithOllama(
+    input: AgentDistillInput,
+    prompt: string,
+    timeoutMs: number,
+): Promise<AgentDistillOutput> {
+    const backend = 'ollama' as const;
+    const model = input.model ?? process.env.XSCS_OLLAMA_MODEL;
+    if (!model) {
+        return {
+            drafts: [],
+            backend,
+            ok: false,
+            error: 'Ollama requires --model <name> or XSCS_OLLAMA_MODEL',
+        };
+    }
+    const configuredHost = process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434';
+    const host = /^https?:\/\//.test(configuredHost) ? configuredHost : `http://${configuredHost}`;
+    try {
+        const response = await fetch(`${host.replace(/\/$/, '')}/api/generate`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ model, prompt, stream: false, format: 'json', options: { temperature: 0 } }),
+            signal: AbortSignal.timeout(timeoutMs),
+        });
+        const body = (await response.json()) as { error?: unknown; response?: unknown };
+        if (!response.ok) {
+            return {
+                drafts: [],
+                backend,
+                ok: false,
+                error: `ollama HTTP ${response.status}: ${String(body.error ?? response.statusText).slice(0, 400)}`,
+            };
+        }
+        if (typeof body.response !== 'string') {
+            return { drafts: [], backend, ok: false, error: 'ollama response did not contain generated text' };
+        }
+        const parsed = extractJson(body.response);
+        if (!parsed) return { drafts: [], backend, ok: false, error: 'no JSON object in distiller output' };
+        const result = DistillResult.safeParse(parsed);
+        if (!result.success) {
+            return { drafts: [], backend, ok: false, error: `schema mismatch: ${result.error.message.slice(0, 300)}` };
+        }
+        return {
+            backend,
+            ok: true,
+            drafts: result.data.items.map((item) => ({
+                type: item.type,
+                title: item.title.slice(0, 200),
+                body: item.body.slice(0, 4000),
+                why: item.why ?? null,
+                scope: item.scope === 'global' ? 'workspace' : (item.scope ?? 'workspace'),
+                tags: item.tags ?? [],
+                confidence: clamp(item.confidence ?? 0.5),
+                status: 'proposed',
+                source: 'distiller:ollama',
+            })),
+        };
+    } catch (error) {
+        return { drafts: [], backend, ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
 }
 
 /**

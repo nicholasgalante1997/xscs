@@ -1,0 +1,69 @@
+[tools]
+bun = "1.3.9"
+node = "24"
+
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+
+[tasks.build]
+description = "Build every workspace package"
+run = "turbo run build"
+
+[tasks.typecheck]
+description = "Type-check every workspace package"
+run = "turbo run check-types"
+
+[tasks.test]
+description = "Run the complete test suite"
+run = "turbo run test"
+
+[tasks.lint]
+description = "Lint the workspace"
+run = "bun run lint"
+
+[tasks.clean]
+description = "Remove generated package artifacts"
+run = "turbo run clean"
+
+[tasks.benchmark-hooks]
+description = "Measure built hook startup"
+run = "bun scripts/benchmark-hooks.ts"
+
+[tasks.prerelease-check]
+description = "Validate npm contents, binary targets, and version agreement"
+depends = ["build"]
+run = "bun scripts/prerelease-check.ts"
+
+[tasks.npm-package-smoke]
+description = "Pack, install, and exercise both npm binaries"
+depends = ["build"]
+run = "bun scripts/smoke-npm-package.ts"
+
+[tasks.standalone-build]
+description = "Cross-compile the standalone release matrix"
+depends = ["build"]
+run = "bun scripts/build-standalone.ts"
+
+[tasks.standalone-checksums]
+description = "Generate SHA-256 checksums for standalone artifacts"
+run = "bun scripts/checksums.ts"
+
+[tasks.standalone-smoke]
+description = "Smoke-test one native standalone artifact"
+run = "bun scripts/smoke-standalone.ts"
+
+[tasks.verify]
+description = "Build, type-check, test, and lint the workspace without dist races"
+run = "turbo run build --force && turbo run check-types && turbo run test && bun run lint"
+
+[tasks.release-prepare]
+description = "Build, verify, pack, and smoke an exact npm release artifact"
+run = "bun scripts/release-prepare.ts"
+
+[tasks.release-publish]
+description = "Publish an exact prepared npm tarball after explicit confirmation"
+run = "bun scripts/release-publish.ts"
+
+[tasks.release-verify]
+description = "Install and verify an already published npm version"
+run = "bun scripts/release-verify.ts"
