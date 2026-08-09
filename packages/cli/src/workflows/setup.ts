@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
 import {
+    isEmbeddedEntry,
     listWorkspaces,
     processPlatform,
     recentSessions,
@@ -36,7 +37,7 @@ export function cmdInit(input: InitInput): void {
     const target = input.user ? homedir() : context.workspace.root;
     const entry = resolveEntry();
     const processes = processPlatform();
-    const command = processes.mainEntry.includes('$bunfs') ? processes.selfCommand([]) : [process.execPath, entry];
+    const command = isEmbeddedEntry(processes.mainEntry) ? processes.selfCommand([]) : [process.execPath, entry];
     const both = !input.claude && !input.codex && !input.kiro;
     const results: Array<{ harness: string; path: string; action: string; backup?: string }> = [];
 

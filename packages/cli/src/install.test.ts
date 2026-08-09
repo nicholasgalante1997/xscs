@@ -127,15 +127,17 @@ describe('install', () => {
     test('Windows standalone paths remain one quoted command and one MCP executable', () => {
         const dir = tmp();
         const executable = String.raw`C:\Program Files\xscs\xscs-windows-x64.exe`;
+        // Bun's Windows embedded filesystem is "B:\~BUN\...", not "$bunfs".
+        const entry = String.raw`B:\~BUN\root\index.js`;
         const claude = installClaude({
             target: dir,
-            entry: String.raw`C:\$bunfs\root\index.js`,
+            entry,
             command: [executable],
             withMcp: true,
         });
         const codex = installCodex({
             target: dir,
-            entry: String.raw`C:\$bunfs\root\index.js`,
+            entry,
             command: [executable],
         });
 
@@ -147,6 +149,7 @@ describe('install', () => {
         )[0]!.hooks[0]!.command;
         expect(command).toStartWith(`"${executable}" hook`);
         expect(command).not.toContain('$bunfs');
+        expect(command).not.toContain('~BUN');
         expect(readFileSync(codex.path, 'utf8')).toContain(`C:\\\\Program Files\\\\xscs`);
     });
 

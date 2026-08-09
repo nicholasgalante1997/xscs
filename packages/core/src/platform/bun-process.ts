@@ -1,4 +1,4 @@
-import type { ProcessPlatform, ProcessRunInput, ProcessRunResult } from './process';
+import { isEmbeddedEntry, type ProcessPlatform, type ProcessRunInput, type ProcessRunResult } from './process';
 
 async function run(input: ProcessRunInput): Promise<ProcessRunResult> {
     const process = Bun.spawn(input.command, {
@@ -36,7 +36,7 @@ async function* stdinChunks(): AsyncIterable<Uint8Array> {
 export const bunProcessPlatform: ProcessPlatform = {
     mainEntry: Bun.main,
     selfCommand(args) {
-        return Bun.main.includes('$bunfs') ? [process.execPath, ...args] : [process.execPath, Bun.main, ...args];
+        return isEmbeddedEntry(Bun.main) ? [process.execPath, ...args] : [process.execPath, Bun.main, ...args];
     },
     async readStdin() {
         return Bun.stdin.text();

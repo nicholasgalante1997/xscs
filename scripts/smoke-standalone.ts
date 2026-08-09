@@ -19,7 +19,10 @@ try {
     const claudeSettings = readFileSync(resolve(home, '.claude/settings.json'), 'utf8');
     const codexHooks = readFileSync(resolve(home, '.codex/hooks.json'), 'utf8');
     for (const configuration of [claudeSettings, codexHooks]) {
-        if (!configuration.includes(artifact) || configuration.includes('$bunfs')) {
+        // Bun's embedded filesystem is "/$bunfs/..." on POSIX but "B:\~BUN\..."
+        // on Windows; checking only the former let a broken Windows hook
+        // command ship for every standalone release.
+        if (!configuration.includes(artifact) || /\$bunfs|~BUN/i.test(configuration)) {
             throw new Error(`standalone hook configuration is not self-contained: ${configuration}`);
         }
     }
