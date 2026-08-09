@@ -18,11 +18,15 @@ try {
     assertSuccess(installed, 'init');
     const claudeSettings = readFileSync(resolve(home, '.claude/settings.json'), 'utf8');
     const codexHooks = readFileSync(resolve(home, '.codex/hooks.json'), 'utf8');
+    // These configurations are JSON, so a Windows artifact path appears with
+    // its separators escaped (D:\\a\\... not D:\a\...). Compare against the
+    // escaped spelling; on POSIX this is identical to the raw path.
+    const embeddedArtifact = JSON.stringify(artifact).slice(1, -1);
     for (const configuration of [claudeSettings, codexHooks]) {
         // Bun's embedded filesystem is "/$bunfs/..." on POSIX but "B:\~BUN\..."
         // on Windows; checking only the former let a broken Windows hook
         // command ship for every standalone release.
-        if (!configuration.includes(artifact) || /\$bunfs|~BUN/i.test(configuration)) {
+        if (!configuration.includes(embeddedArtifact) || /\$bunfs|~BUN/i.test(configuration)) {
             throw new Error(`standalone hook configuration is not self-contained: ${configuration}`);
         }
     }
@@ -45,7 +49,14 @@ try {
     await smokeDashboard();
     console.log(`standalone smoke passed: ${artifact}`);
 } finally {
-    rmSync(home, { force: true, recursive: true });
+    // Windows can hold handles to the store file for a moment after the
+    // dashboard child exits. Removing a scratch directory is not what this
+    // script verifies, so a stubborn temp directory must not fail a green run.
+    try {
+        rmSync(home, { force: true, recursive: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+        console.warn(`could not remove ${home}: ${String(error)}`);
+    }
 }
 
 function escapeRegExp(value: string): string {
