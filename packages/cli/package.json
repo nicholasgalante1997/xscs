@@ -1,6 +1,6 @@
 {
   "name": "cross-session-summary",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0",
   "description": "Local cross-session context for Claude Code, Codex, and Kiro CLI",
   "type": "module",
   "bin": {
@@ -15,11 +15,19 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "homepage": "https://github.com/nicholasgalante1997/xscs",
+  "bugs": {
+    "url": "https://github.com/nicholasgalante1997/xscs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:nicholasgalante1997/xscs.git"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "engines": {
     "bun": ">=1.3",
