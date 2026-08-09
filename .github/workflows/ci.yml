@@ -56,9 +56,7 @@ jobs:
           - runner: ubuntu-24.04
             target: bun-linux-x64-baseline
             artifact: xscs-linux-x64
-          - runner: windows-2025
-            target: bun-windows-x64-baseline
-            artifact: xscs-windows-x64.exe
+          # The Windows artifact is built by standalone-windows below, not here.
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -73,3 +71,41 @@ jobs:
           name: ${{ matrix.artifact }}
           path: release/${{ matrix.artifact }}
           if-no-files-found: error
+
+  # Bun 1.3.9 cannot extract its own bun-windows-x64-baseline compile target
+  # when it is running *on* a Windows host ("Failed to extract executable ...
+  # The download may be incomplete"), and it caches the unusable file, so the
+  # failure is sticky rather than flaky. Cross-compiling the same target from
+  # Linux is the supported path and produces a valid PE32+ binary, so the
+  # Windows artifact is built here and executed on Windows in the next job.
+  standalone-windows:
+    name: Standalone (xscs-windows-x64.exe)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun scripts/build-standalone.ts --target bun-windows-x64-baseline
+      - uses: actions/upload-artifact@v6
+        with:
+          name: xscs-windows-x64.exe
+          path: release/xscs-windows-x64.exe
+          if-no-files-found: error
+
+  standalone-windows-smoke:
+    name: Standalone smoke (xscs-windows-x64.exe)
+    needs: standalone-windows
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - uses: actions/download-artifact@v7
+        with:
+          name: xscs-windows-x64.exe
+          path: release
+      - run: bun scripts/smoke-standalone.ts release/xscs-windows-x64.exe
