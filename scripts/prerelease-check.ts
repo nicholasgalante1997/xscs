@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { releaseTag } from './release/lib';
+
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 interface PackFile {
     path: string;
 }
@@ -16,12 +20,18 @@ const manifest = JSON.parse(readFileSync(resolve(PACKAGE_DIR, 'package.json'), '
     version: string;
     bin: Record<string, string>;
     dependencies?: Record<string, string>;
+    publishConfig?: { tag?: string };
 };
 
 const failures: string[] = [];
 
 if (manifest.name !== 'cross-session-summary') failures.push(`unexpected package name: ${manifest.name}`);
-if (!manifest.version.startsWith('0.2.0-')) failures.push(`expected a 0.2.0 prerelease, received ${manifest.version}`);
+if (!SEMVER.test(manifest.version)) failures.push(`version is not valid semver: ${manifest.version}`);
+
+const expectedTag = releaseTag(manifest.version);
+if (manifest.publishConfig?.tag !== expectedTag) {
+    failures.push(`publishConfig.tag is ${manifest.publishConfig?.tag ?? 'unset'}, expected ${expectedTag} for ${manifest.version}`);
+}
 
 for (const [name, target] of Object.entries(manifest.bin)) {
     if (!target.startsWith('./dist/') || !target.endsWith('.js')) {
