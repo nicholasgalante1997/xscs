@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -22,6 +22,7 @@ const artifacts: Artifact[] = [
     { name: 'Bun', command: process.execPath, entry: resolve(ROOT, 'packages/cli/dist/xscs.js') },
     { name: 'Node', command: 'node', entry: resolve(ROOT, 'packages/cli/dist/xscs.node.js') },
 ];
+const PACKAGE_VERSION = (JSON.parse(readFileSync(resolve(ROOT, 'packages/cli/package.json'), 'utf8')) as { version: string }).version;
 const temporaryDirectories: string[] = [];
 
 function runMcp(artifact: Artifact, messages: unknown[], rawPrefix = ''): { responses: RpcResponse[]; stderr: string } {
@@ -66,6 +67,7 @@ for (const artifact of artifacts) describe(`${artifact.name} MCP JSON-RPC confor
             },
         ]);
         expect(stderr).toBe('');
+        expect(PACKAGE_VERSION).toMatch(/^\d+\.\d+\.\d+/);
         expect(responses).toEqual([
             {
                 jsonrpc: '2.0',
@@ -73,7 +75,7 @@ for (const artifact of artifacts) describe(`${artifact.name} MCP JSON-RPC confor
                 result: {
                     protocolVersion: '2025-06-18',
                     capabilities: { tools: {} },
-                    serverInfo: { name: 'xscs', version: '0.2.0-alpha.0' },
+                    serverInfo: { name: 'xscs', version: PACKAGE_VERSION },
                 },
             },
         ]);
