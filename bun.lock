@@ -43,7 +43,7 @@
     },
     "packages/cli": {
       "name": "cross-session-summary",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.1",
       "bin": {
         "xscs": "./dist/xscs.node.js",
         "xscs-bun": "./dist/xscs.js",

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { delimiter, resolve } from 'node:path';
 
 import type { ProcessPlatform, ProcessRunInput, ProcessRunResult } from './process';
@@ -53,10 +53,20 @@ function which(command: string): string | null {
     return null;
 }
 
+function mainEntry(): string {
+    const entry = resolve(process.argv[1] ?? '');
+    return existsSync(entry) ? realpathSync(entry) : entry;
+}
+
+const entry = mainEntry();
+
 export const nodeProcessPlatform: ProcessPlatform = {
-    mainEntry: resolve(process.argv[1] ?? ''),
+    // npm exposes package binaries through node_modules/.bin symlinks. Keep the
+    // package entry, not the symlink path, so `xscs init` wires the published
+    // dist bundle instead of looking for `.bin/dist/xscs.js`.
+    mainEntry: entry,
     selfCommand(args) {
-        return [process.execPath, resolve(process.argv[1] ?? ''), ...args];
+        return [process.execPath, entry, ...args];
     },
     async readStdin() {
         const chunks: Uint8Array[] = [];

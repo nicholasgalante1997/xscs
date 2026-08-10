@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed `xscs init` when the Node CLI is invoked through npm's installed binary symlink.
+- Added installed-bin initialization to the release smoke test.
+
 ## 0.2.0
 
 - Added a hook-first CAC command surface.

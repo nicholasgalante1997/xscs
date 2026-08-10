@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, resolve } from 'node:path';
 
@@ -151,12 +151,26 @@ export function smokePackage(source: string, expectedVersion: string): void {
         const nodeEntry = resolve(packageRoot, 'dist/xscs.node.js');
         const bunEntry = resolve(packageRoot, 'dist/xscs.js');
         const extension = process.platform === 'win32' ? '.cmd' : '';
-        for (const name of [`xscs${extension}`, `xscs-bun${extension}`]) {
-            if (!existsSync(resolve(installRoot, 'node_modules/.bin', name))) throw new Error(`npm did not expose ${name}`);
+        const nodeBin = resolve(installRoot, 'node_modules/.bin', `xscs${extension}`);
+        const bunBin = resolve(installRoot, 'node_modules/.bin', `xscs-bun${extension}`);
+        for (const bin of [nodeBin, bunBin]) {
+            if (!existsSync(bin)) throw new Error(`npm did not expose ${bin}`);
         }
         expectVersion(['node', nodeEntry, '--version'], expectedVersion, env);
         expectVersion(['mise', 'exec', 'node@24.0.0', '--', 'node', nodeEntry, '--version'], expectedVersion, env);
         expectVersion(['bun', bunEntry, '--version'], expectedVersion, env);
+        expectVersion(installedBinCommand(nodeBin, ['--version']), expectedVersion, env);
+        expectVersion(installedBinCommand(bunBin, ['--version']), expectedVersion, env);
+        const workspace = resolve(temporary, 'workspace with spaces');
+        mkdirSync(workspace, { recursive: true });
+        const initialized = run(installedBinCommand(nodeBin, ['init', '--claude', '--dry-run', '--json']), {
+            cwd: workspace,
+            env,
+            quiet: true,
+        });
+        if (!initialized.includes('xscs.node.js')) {
+            throw new Error(`installed Node bin did not resolve its published entry: ${initialized}`);
+        }
         run(['mise', 'exec', 'node@24.0.0', '--', 'node', nodeEntry, 'remember', '--title', 'release tarball smoke', '--body', 'Node and Bun share this store.', '--json'], { env });
         const found = run(['bun', bunEntry, 'search', 'release tarball smoke', '--json'], { env, quiet: true });
         if (!found.includes('release tarball smoke')) throw new Error('Bun did not read the item written by Node 24.0.0');
@@ -175,6 +189,10 @@ export function smokePackage(source: string, expectedVersion: string): void {
     } finally {
         rmSync(temporary, { force: true, recursive: true });
     }
+}
+
+function installedBinCommand(bin: string, args: string[]): string[] {
+    return process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', bin, ...args] : [bin, ...args];
 }
 
 export function manifestPathForTarball(tarball: string): string {

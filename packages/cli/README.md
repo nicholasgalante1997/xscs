@@ -37,7 +37,7 @@ Either command operates on the same store. CommonJS is not supported.
 ## Install
 
 ```bash
-npm install --global cross-session-summary@alpha
+npm install --global cross-session-summary
 ```
 
 Wire Claude Code and Codex into the current project:
@@ -188,7 +188,7 @@ npm tarball.
 
 ## Stability
 
-The `0.2.0-alpha` line preserves the existing `xscs` binary name, command and
+The `0.2.x` line preserves the existing `xscs` binary name, command and
 flag behavior, JSON shapes, environment variables, SQLite location, and MCP
 tool contracts. The initial public package surface is binary-only; internal
 packages are not public library APIs.
